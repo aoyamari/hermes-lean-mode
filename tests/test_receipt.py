@@ -152,7 +152,7 @@ def test_receipt_no_comparison():
 
 
 def test_stats_output():
-    """Stats formatting."""
+    """Stats formatting with net saved."""
     stats = {
         "period": "last 7 days",
         "total_runs": 37,
@@ -161,20 +161,54 @@ def test_stats_output():
         "cancelled_budget": 2,
         "cancelled_watchdog": 2,
         "total_spent": 4.21,
-        "total_saved": 3.80,
+        "vs_non_lean_total": 8.0,
+        "net_saved": 3.79,
+        "net_saved_pct": 47.4,
+        "escalated_wasted": 0.05,
+        "savings_counted_runs": 32,
+        "savings_unknown_runs": 2,
         "is_estimate": True,
         "unknown_cost_runs": 1,
         "top_preset": "research",
+        "skipped_count": 0,
     }
     output = format_stats_output(stats)
     assert "37 runs" in output
     assert "30 ok" in output
     assert "3 escalated" in output
+    assert "3 runs (−$0.0500 wasted)" in output, f"escalated waste line:\n{output}"
     assert "$4.21" in output
+    assert "net saved" in output
+    assert "47%" in output or "47.4%" in output
     assert "@research" in output
     assert "unknown" in output
-    # No skipped entries
     assert "skipped" not in output
+
+
+def test_stats_output_net_loss():
+    """When net_saved is negative, show net LOSS."""
+    stats = {
+        "period": "last 7 days",
+        "total_runs": 5,
+        "succeeded": 2,
+        "escalated": 3,
+        "cancelled_budget": 0,
+        "cancelled_watchdog": 0,
+        "total_spent": 0.5,
+        "vs_non_lean_total": 0.3,
+        "net_saved": -0.2,
+        "net_saved_pct": -66.7,
+        "escalated_wasted": 0.4,
+        "savings_counted_runs": 5,
+        "savings_unknown_runs": 0,
+        "is_estimate": True,
+        "unknown_cost_runs": 0,
+        "top_preset": "force_escalate",
+        "skipped_count": 0,
+    }
+    output = format_stats_output(stats)
+    assert "net LOSS" in output, f"Should show net LOSS:\n{output}"
+    assert "$0.20" in output or "$0.2" in output, f"Should show loss amount:\n{output}"
 
 
 def test_receipt_toolsets_inherited():

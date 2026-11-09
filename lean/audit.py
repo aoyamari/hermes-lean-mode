@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .config import LeanConfig, PriceEntry
+
 logger = logging.getLogger("lean-mode.audit")
 
 
@@ -86,6 +88,19 @@ class AuditLog:
             logger.warning("Audit log rotation failed: %s", exc)
 
 
+def _reprice(tokens: Dict[str, int], model_key: str, prices: Dict[str, PriceEntry]) -> float:
+    """Reprice token bucket at a given model's rates. Returns 0 if model not found."""
+    price = prices.get(model_key)
+    if not price:
+        return 0.0
+    total = 0.0
+    total += tokens.get("input", 0) * (price.input / 1_000_000)
+    total += tokens.get("output", 0) * (price.output / 1_000_000)
+    total += tokens.get("cache_read", 0) * (price.cache_read / 1_000_000)
+    total += tokens.get("cache_write", 0) * (price.cache_write / 1_000_000)
+    return total
+
+
 def build_audit_entry(
     correlation_id: str,
     status: str,
@@ -93,6 +108,7 @@ def build_audit_entry(
     run_state: "RunState",  # noqa: F821
     cheap_outcome: Optional[Dict[str, Any]] = None,
     parent_model: Optional[str] = None,
+    prices: Optional[Dict[str, PriceEntry]] = None,
     budget_usd: Optional[float] = None,
     preset: Optional[str] = None,
     result_hash: Optional[str] = None,
@@ -104,6 +120,9 @@ def build_audit_entry(
     (e.g. ``escalated_succeeded``, ``escalated_failed``) and
     ``cost_usd_estimate`` = cheap + escalation cost. The original cheap
     attempt's status is recorded in ``escalated.status``.
+
+    When ``prices`` and ``parent_model`` are both given, computes
+    ``vs_non_lean_usd`` = repricing the tokens at the parent's rates.
     """
     now = outcome.get("ended_at", 0) or 0
     is_esc = outcome.get("is_escalation", False) or (cheap_outcome is not None)
@@ -122,6 +141,18 @@ def build_audit_entry(
     # Status reflects final outcome; for escalated runs, prefix
     display_status = f"escalated_{status}" if is_esc else status
 
+    merged_tokens = {
+        "input": (run_state.tokens_input or 0) + esc_input,
+        "output": (run_state.tokens_output or 0) + esc_output,
+        "cache_read": (run_state.tokens_cache_read or 0) + esc_cr,
+        "cache_write": (run_state.tokens_cache_write or 0) + esc_cw,
+    }
+
+    # Compute vs_non_lean = repricing at parent rates
+    vs_non_lean_usd = 0.0
+    if prices and parent_model:
+        vs_non_lean_usd = _reprice(merged_tokens, parent_model, prices)
+
     entry = {
         "ts": now,
         "correlation_id": correlation_id,
@@ -130,13 +161,9 @@ def build_audit_entry(
         "provider": run_state.provider or "",
         "toolsets": list(run_state.__dict__.get("_toolsets", [])),
         "duration_ms": int(outcome.get("duration", 0) * 1000),
-        "tokens": {
-            "input": (run_state.tokens_input or 0) + esc_input,
-            "output": (run_state.tokens_output or 0) + esc_output,
-            "cache_read": (run_state.tokens_cache_read or 0) + esc_cr,
-            "cache_write": (run_state.tokens_cache_write or 0) + esc_cw,
-        },
+        "tokens": merged_tokens,
         "cost_usd_estimate": total_cost,
+        "vs_non_lean_usd": vs_non_lean_usd,
         "child_session_id": run_state.child_session_id or "",
         "result_hash": result_hash or "",
     }

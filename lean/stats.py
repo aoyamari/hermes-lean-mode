@@ -13,12 +13,12 @@ logger = logging.getLogger("lean-mode.stats")
 def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
     """Aggregate stats from audit log. Returns dict with summary fields.
 
-    ``cost_usd_estimate`` at the top level = total (cheap + escalation).
-    Escalated runs have status ``escalated_<cheap_status>``; they count
-    as escalated but NOT as succeeded. ``total_saved`` is negative when
-    escalation wasted cheap-model spend.
+    ``net_saved`` = Σ (vs_non_lean_usd − cost_usd_estimate) for EVERY run
+    that has both values. Escalated runs contribute negative savings
+    (cheap cost wasted). Runs without ``vs_non_lean_usd`` are excluded
+    from the savings total.
 
-    Entries with ``ts == 0`` or missing required fields are counted in
+    Entries with ``ts == 0`` or missing status are counted in
     ``skipped_count`` and excluded from aggregates.
     """
     raw = audit.read_all()
@@ -55,7 +55,12 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
             "cancelled_budget": 0,
             "cancelled_watchdog": 0,
             "total_spent": 0.0,
-            "total_saved": 0.0,
+            "vs_non_lean_total": 0.0,
+            "net_saved": 0.0,
+            "net_saved_pct": 0.0,
+            "escalated_wasted": 0.0,
+            "savings_counted_runs": 0,
+            "savings_unknown_runs": 0,
             "is_estimate": True,
             "unknown_cost_runs": 0,
             "top_preset": None,
@@ -67,7 +72,10 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
     cancelled_budget = 0
     cancelled_watchdog = 0
     total_spent = 0.0
-    total_saved = 0.0
+    vs_non_lean_total = 0.0
+    escalated_wasted = 0.0
+    savings_counted = 0
+    savings_unknown = 0
     has_actual = True
     unknown_cost_runs = 0
     preset_counts: Dict[str, int] = {}
@@ -76,7 +84,6 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         status = entry.get("status", "")
         escalated_info = entry.get("escalated")
 
-        # escalated_* entries are escalated, not succeeded
         if status == "succeeded":
             succeeded += 1
         if escalated_info:
@@ -86,21 +93,24 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         if status == "cancelled_by_watchdog":
             cancelled_watchdog += 1
 
-        # Total spent already includes cheap + escalation for escalated runs
         cost = entry.get("cost_usd_actual") or entry.get("cost_usd_estimate")
         if cost is None or cost == 0:
             unknown_cost_runs += 1
         else:
             total_spent += cost
 
-        # Savings: escalated runs wasted the cheap-model spend
+        # Net saved = Σ(vs_non_lean − actual) per run
+        vnl = entry.get("vs_non_lean_usd", 0.0)
+        if vnl and vnl > 0 and cost:
+            vs_non_lean_total += vnl
+            savings_counted += 1
+        else:
+            savings_unknown += 1
+
+        # Track cheap-model waste from escalation
         if escalated_info:
             cheap_cost = escalated_info.get("cheap_cost_usd", 0)
-            total_saved -= cheap_cost
-        else:
-            # Non-escalated: estimate saved vs parent
-            # We don't have parent cost in audit entry directly
-            pass
+            escalated_wasted += cheap_cost
 
         preset = entry.get("preset")
         if preset:
@@ -108,6 +118,9 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
 
         if "cost_usd_actual" not in entry:
             has_actual = False
+
+    net_saved = vs_non_lean_total - total_spent
+    net_saved_pct = (net_saved / vs_non_lean_total * 100) if vs_non_lean_total > 0 else 0.0
 
     top_preset = max(preset_counts, key=preset_counts.get) if preset_counts else None
 
@@ -119,7 +132,12 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         "cancelled_budget": cancelled_budget,
         "cancelled_watchdog": cancelled_watchdog,
         "total_spent": total_spent,
-        "total_saved": total_saved,
+        "vs_non_lean_total": vs_non_lean_total,
+        "net_saved": net_saved,
+        "net_saved_pct": net_saved_pct,
+        "escalated_wasted": escalated_wasted,
+        "savings_counted_runs": savings_counted,
+        "savings_unknown_runs": savings_unknown,
         "is_estimate": not has_actual,
         "unknown_cost_runs": unknown_cost_runs,
         "top_preset": top_preset,

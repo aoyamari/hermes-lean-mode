@@ -203,15 +203,23 @@ def format_stats_output(
                  f"{cancelled_budget} budget-stop · {cancelled_watchdog} timeout")
 
     total_spent = stats.get("total_spent", 0.0)
-    total_saved = stats.get("total_saved", 0.0)
-    label = "estimate" if stats.get("is_estimate", True) else "actual"
+    vs_non_lean = stats.get("vs_non_lean_total", 0.0)
+    net_saved = stats.get("net_saved", 0.0)
+    net_saved_pct = stats.get("net_saved_pct", 0.0)
+    escalated_wasted = stats.get("escalated_wasted", 0.0)
     skipped = stats.get("skipped_count", 0)
-    lines.append(f"  spent: ${_format_cost(total_spent)} ({label})")
+    label = "estimate" if stats.get("is_estimate", True) else "actual"
 
-    if total_saved >= 0:
-        lines.append(f"  net saved: ${_format_cost(total_saved)} ({label})")
-    else:
-        lines.append(f"  net LOSS: ${_format_cost(abs(total_saved))} ({label}) — escalated runs affected savings")
+    line = f"  spent: ${_format_cost(total_spent)} ({label})"
+    if vs_non_lean:
+        if net_saved >= 0:
+            line += f" · vs non-Lean ${_format_cost(vs_non_lean)} · net saved ${_format_cost(net_saved)} ({net_saved_pct:.0f}%)"
+        else:
+            line += f" · vs non-Lean ${_format_cost(vs_non_lean)} · net LOSS ${_format_cost(abs(net_saved))} ({abs(net_saved_pct):.0f}%)"
+    lines.append(line)
+
+    if stats.get("escalated", 0):
+        lines.append(f"  escalated: {stats['escalated']} runs (−${_format_cost(escalated_wasted)} wasted)")
 
     unknown = stats.get("unknown_cost_runs", 0)
     if unknown:
