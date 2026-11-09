@@ -20,6 +20,7 @@ def format_receipt(
     is_escalated: bool = False,
     escalation_cheap_cost: float = 0.0,
     escalation_trigger: Optional[str] = None,
+    toolsets_inherited: bool = False,
 ) -> str:
     """Build the receipt string appended to results.
 
@@ -28,6 +29,14 @@ def format_receipt(
     lines = []
     model_name = run.response_model or run.model or "unknown"
     cheap_model = model_name
+
+    # Extract turns & tool_calls from SubagentResult.tool_execution_summary
+    subagent_result = outcome.get("_subagent_result")
+    tes = {}
+    if subagent_result is not None and hasattr(subagent_result, "tool_execution_summary"):
+        tes = subagent_result.tool_execution_summary or {}
+    turns_str = str(tes.get("turns", "n/a")) if isinstance(tes, dict) else "n/a"
+    tool_calls_str = str(tes.get("tool_calls", "n/a")) if isinstance(tes, dict) else "n/a"
 
     if is_escalated:
         # Escalated receipt
@@ -56,7 +65,7 @@ def format_receipt(
 
         lines.append(
             f"⚡ Lean receipt — model {model_name} · {api_calls} calls · "
-            f"{outcome.get('turns', '?')} turns · {outcome.get('tool_calls', '?')} tool calls · "
+            f"{turns_str} turns · {tool_calls_str} tool calls · "
             f"{duration_s:.0f}s"
         )
         lines.append(
@@ -68,6 +77,10 @@ def format_receipt(
         saved_str = _comparison_line(cfg, run, parent_model)
         if saved_str:
             lines.append(saved_str)
+
+        # Toolsets inheritance note
+        if toolsets_inherited:
+            lines.append("toolsets: inherited from parent (narrowing rejected) · skills: ON")
 
         # Budget line
         if budget and budget > 0:
@@ -85,12 +98,17 @@ def format_receipt(
 
 
 def _comparison_line(cfg: LeanConfig, run: RunState, parent_model: Optional[str]) -> str:
-    """Compute vs-non-Lean comparison."""
+    """Compute vs-non-Lean comparison.
+
+    Price keys are matched by exact model ID first, then by suffix
+    (e.g. 'glm-5.3-flash' matches 'surplus/glm-5.3-flash').
+    """
     if not parent_model:
         return ""
 
-    cheap_price = cfg.prices.get(run.response_model or run.model or "")
-    parent_price = cfg.prices.get(parent_model)
+    cheap_model_key = run.response_model or run.model or ""
+    cheap_price = _lookup_price(cfg.prices, cheap_model_key)
+    parent_price = _lookup_price(cfg.prices, parent_model)
     if not cheap_price or not parent_price:
         return ""
 
@@ -103,18 +121,28 @@ def _comparison_line(cfg: LeanConfig, run: RunState, parent_model: Optional[str]
         + run.tokens_reasoning * (parent_price.output / 1_000_000)
     )
 
-    cheap_cost = run.spent_usd(cfg.prices, run.response_model or run.model)
+    cheap_cost = run.spent_usd(cfg.prices, cheap_model_key)
     if parent_cost <= 0:
         return ""
 
     saved = parent_cost - cheap_cost
     saved_pct = (saved / parent_cost) * 100 if parent_cost > 0 else 0.0
 
-    note = ""
-    if parent_model == "combo":
-        note = " (assumes combo = deepseek-v4-flash)"
+    return f"vs non-Lean (same work on {parent_model}): ${parent_cost:.4f} (estimate) — saved ~{saved_pct:.0f}%"
 
-    return f"vs non-Lean (same work on {parent_model}): ${parent_cost:.4f} (estimate) — saved ~{saved_pct:.0f}%{note}"
+
+def _lookup_price(prices: Dict[str, PriceEntry], model_key: str) -> Optional[PriceEntry]:
+    """Look up a price entry by exact key, then by suffix match."""
+    if not model_key:
+        return None
+    # Exact match first
+    if model_key in prices:
+        return prices[model_key]
+    # Suffix match: e.g. 'glm-5.3-flash' matches 'surplus/glm-5.3-flash'
+    for key in prices:
+        if key.endswith("/" + model_key) or model_key.endswith(key):
+            return prices[key]
+    return None
 
 
 def format_stats_output(

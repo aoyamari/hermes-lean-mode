@@ -471,6 +471,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
     _ACTIVE_RUNS[correlation_id] = run
 
     # ── Launch subagent ───────────────────────────────────────────────
+    toolsets_inherited = False
     try:
         handle = ctx.subagent_lifecycle.launch(launch_req)
     except Exception as exc:
@@ -482,6 +483,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                 correlation_id, launch_req.get("allowed_toolsets"),
             )
             launch_req["allowed_toolsets"] = None
+            toolsets_inherited = True
             try:
                 handle = ctx.subagent_lifecycle.launch(launch_req)
             except Exception as exc2:
@@ -556,6 +558,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
         is_escalated=outcome.get("is_escalation", False),
         escalation_cheap_cost=outcome.get("escalation_cheap_cost", 0.0),
         escalation_trigger=outcome.get("escalation_trigger"),
+        toolsets_inherited=toolsets_inherited,
     )
 
     # ── Result text ───────────────────────────────────────────────────
@@ -588,6 +591,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
             budget_usd=effective_budget,
             preset=preset,
             result_hash=outcome.get("result_hash"),
+            toolsets_inherited=toolsets_inherited,
         )
         audit.append(entry)
     except Exception as exc:

@@ -169,3 +169,70 @@ def test_stats_output():
     assert "$4.21" in output
     assert "@research" in output
     assert "unknown" in output
+
+
+def test_receipt_toolsets_inherited():
+    """Receipt shows toolsets inheritance note."""
+    cfg = LeanConfig()
+    cfg.prices["test-model"] = PriceEntry(input=0.1, output=0.5)
+    run = RunState("test", 1000.0)
+    run.tokens_input = 100
+    run.tokens_output = 50
+    run.response_model = "test-model"
+
+    outcome = {
+        "status": "succeeded", "result_text": "Done",
+        "spent": 0.0, "duration": 5.0,
+    }
+
+    receipt = format_receipt(cfg, run, outcome, toolsets_inherited=True)
+    assert "toolsets:" in receipt
+    assert "inherited from parent" in receipt
+    assert "skills: ON" in receipt
+
+
+def test_receipt_turns_from_summary():
+    """Receipt reads turns/tool_calls from tool_execution_summary."""
+    cfg = LeanConfig()
+    cfg.prices["test-model"] = PriceEntry(input=0.1, output=0.5)
+    run = RunState("test", 1000.0)
+    run.tokens_input = 100
+    run.tokens_output = 50
+    run.response_model = "test-model"
+
+    outcome = {
+        "status": "succeeded", "result_text": "Done",
+        "spent": 0.0, "duration": 5.0,
+    }
+
+    # Mock SubagentResult-like object with tool_execution_summary
+    class MockRes:
+        tool_execution_summary = {"turns": 2, "tool_calls": 5}
+
+    outcome["_subagent_result"] = MockRes()
+
+    receipt = format_receipt(cfg, run, outcome)
+    assert "2 turns" in receipt, f"expected 2 turns, got:\n{receipt}"
+    assert "5 tool calls" in receipt, f"expected 5 tool calls, got:\n{receipt}"
+
+
+def test_lookup_price_suffix():
+    """_lookup_price matches by suffix when exact key absent."""
+    from lean.receipt import _lookup_price
+
+    prices = {
+        "surplus/glm-5.3-flash": PriceEntry(input=0.0023, output=0.0066),
+        "surplus/deepseek-v4-flash": PriceEntry(input=0.0091, output=0.018),
+    }
+
+    # Short API name → full key by suffix
+    got = _lookup_price(prices, "glm-5.3-flash")
+    assert got is not None and got.input == 0.0023
+
+    # No match
+    got2 = _lookup_price(prices, "combo")
+    assert got2 is None
+
+    # Empty
+    got3 = _lookup_price(prices, "")
+    assert got3 is None

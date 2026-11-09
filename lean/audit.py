@@ -96,6 +96,7 @@ def build_audit_entry(
     budget_usd: Optional[float] = None,
     preset: Optional[str] = None,
     result_hash: Optional[str] = None,
+    toolsets_inherited: bool = False,
 ) -> Dict[str, Any]:
     """Build a JSON-serializable audit entry."""
     now = outcome.get("ended_at", 0) or 0
@@ -117,6 +118,9 @@ def build_audit_entry(
         "child_session_id": run_state.child_session_id or "",
         "result_hash": result_hash or "",
     }
+
+    if toolsets_inherited:
+        entry["toolsets_inherited"] = True
 
     if outcome.get("budget_spent"):
         entry["cost_usd_actual"] = outcome.get("budget_spent")
