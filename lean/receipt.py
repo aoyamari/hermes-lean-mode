@@ -41,6 +41,7 @@ def format_receipt(
     escalation_trigger: Optional[str] = None,
     escalation_model: Optional[str] = None,
     toolsets_inherited: bool = False,
+    timeout_clamped: bool = False,
 ) -> str:
     """Build the receipt string appended to results.
 
@@ -122,6 +123,9 @@ def format_receipt(
 
     if brief_was_used and not is_escalated:
         lines.append("excludes the main agent's brief-writing turn")
+
+    if timeout_clamped:
+        lines.append(f"⚠ timeout clamped to {cfg.gateway_max_timeout_seconds}s (gateway limit)")
 
     return "\n".join(lines)
 

@@ -114,14 +114,16 @@ def run_escalation(
             if hasattr(handle, "subagent_id") and handle.subagent_id:
                 esc_run.child_session_id = handle.subagent_id
 
-        # Watchdog for escalation (shorter remaining time)
-        deadline = min(remaining_deadline, now + remaining_time)
+        # Remaining wall-clock time for escalation
+        esc_remaining = remaining_deadline - time.monotonic()
+        esc_deadline = time.monotonic() + max(0, esc_remaining)
         watchdog = Watchdog(
             cfg=cfg,
             run=esc_run,
             cancel_fn=lambda **kw: ctx.subagent_lifecycle.cancel(handle, **kw),
             wait_fn=lambda **kw: ctx.subagent_lifecycle.wait(handle, **kw),
             result_fn=lambda: ctx.subagent_lifecycle.result(handle),
+            timeout_seconds=max(1, int(esc_remaining)),
         )
         outcome = watchdog.monitor()
         outcome["is_escalation"] = True
@@ -130,6 +132,7 @@ def run_escalation(
         outcome["escalation_model"] = esc_model or esc_run.response_model or ""
         outcome["escalation_duration"] = time.monotonic() - now
         outcome["escalation_ended_at"] = time.time()
+        outcome["ended_at"] = time.time()  # for audit ts
 
         # Merge escalation token aggregates into outcome for receipt
         outcome["escalation_tokens_input"] = esc_run.tokens_input

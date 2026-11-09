@@ -104,12 +104,14 @@ class Watchdog:
         cancel_fn: Callable,
         wait_fn: Callable,
         result_fn: Callable,
+        timeout_seconds: Optional[int] = None,
     ):
         self.cfg = cfg
         self.run = run
         self._cancel = cancel_fn
         self._wait = wait_fn
         self._result = result_fn
+        self._timeout = timeout_seconds or cfg.timeout_seconds
 
     def monitor(self) -> Dict[str, Any]:
         """Run the watchdog loop.
@@ -117,7 +119,7 @@ class Watchdog:
         Returns a dict with outcome fields:
             status, result_text, spent, budget_status, error
         """
-        deadline = self.run.started_at + self.cfg.timeout_seconds
+        deadline = self.run.started_at + self._timeout
         poll = self.cfg.poll_interval_seconds
         budget = self.run.budget_usd
 

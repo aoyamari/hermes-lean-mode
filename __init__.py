@@ -427,15 +427,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
     effective_budget = budget_override if budget_override is not None else cfg.budget_usd
     effective_escalate = no_escalate if no_escalate else (escalate_override if escalate_override is not None else cfg.escalate)
 
-    # Gateway timeout clamp
-    try:
-        surface = ctx.session_surface()
-        if surface in ("telegram", "discord", "whatsapp"):
-            if effective_timeout > cfg.gateway_max_timeout_seconds:
-                effective_timeout = cfg.gateway_max_timeout_seconds
-    except Exception:
-        pass
-
     # ── Resolve model and tools ──────────────────────────────────────
     if full:
         effective_model = None
@@ -537,12 +528,22 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
 
     # ── Watchdog ──────────────────────────────────────────────────────
     started_at = now
+    timeout_clamped = False
+    try:
+        surface = ctx.session_surface()
+        if surface in ("telegram", "discord", "whatsapp", "gateway"):
+            if effective_timeout > cfg.gateway_max_timeout_seconds:
+                effective_timeout = cfg.gateway_max_timeout_seconds
+                timeout_clamped = True
+    except Exception:
+        pass
     watchdog = Watchdog(
         cfg=cfg,
         run=run,
         cancel_fn=lambda **canc_kw: ctx.subagent_lifecycle.cancel(handle, **canc_kw),
         wait_fn=lambda **wait_kw: ctx.subagent_lifecycle.wait(handle, **wait_kw),
         result_fn=lambda: ctx.subagent_lifecycle.result(handle),
+        timeout_seconds=effective_timeout,
     )
     outcome = watchdog.monitor()
     outcome["duration"] = time.monotonic() - started_at
@@ -584,6 +585,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
         escalation_trigger=outcome.get("escalation_trigger"),
         escalation_model=escalation_model,
         toolsets_inherited=toolsets_inherited,
+        timeout_clamped=timeout_clamped,
     )
 
     # ── Result text ───────────────────────────────────────────────────
