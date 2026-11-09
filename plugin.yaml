@@ -1,6 +1,7 @@
 name: lean-mode
 version: 0.1.0
-description: "Cheap-model subagent (quick_run) with a dollar cap, auto-escalation and an honest cost receipt"
+description: "Cheap-model subagent (quick_run) with a dollar cap, auto-escalation when the cheap model fails, and an honest cost receipt"
+maintainer: Aoyama
 author: Aoyama
 license: MIT
 requires_hermes: ">=0.23.0"
