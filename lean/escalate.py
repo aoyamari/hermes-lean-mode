@@ -48,12 +48,19 @@ def run_escalation(
     parent_toolsets: Optional[List[str]] = None,
     parent_model: Optional[str] = None,
     parent_provider: Optional[str] = None,
+    pending_map: Optional[Dict[str, str]] = None,
+    child_map: Optional[Dict[str, str]] = None,
+    active_runs: Optional[Dict[str, RunState]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Launch escalation attempt with parent model + full toolsets.
 
     Escalation passes allowed_toolsets=None (inherit parent) so the
     escalation child has the SAME capability as the parent, regardless
     of lean.toolsets restriction.
+
+    When pending_map and child_map are provided (the _PENDING / _CHILD_MAP
+    dicts from the caller), the escalation child's post_api_request tokens
+    are tracked — without them, escalation API calls are invisible.
     """
     now = time.monotonic()
     remaining_time = remaining_deadline - now
@@ -83,14 +90,29 @@ def run_escalation(
                        budget_usd=remaining_budget)
     esc_run.is_escalation = True
     esc_run.escalation_trigger = cheap_outcome.get("status", "unknown")
+    esc_run.model = esc_model or ""
+
+    # Register esc_run so post_api_request can find it
+    if active_runs is not None:
+        active_runs[esc_correlation] = esc_run
 
     try:
         handle = ctx.subagent_lifecycle.launch(esc_req)
-        if cheap_run.child_session_id:
-            esc_run.child_session_id = cheap_run.child_session_id + "-esc"
 
-        # Map escalation child session
-        _map_child_session(esc_run, handle)
+        # Map escalation child session — pop from _PENDING, set _CHILD_MAP
+        esc_child_session_id = None
+        if pending_map is not None and child_map is not None:
+            esc_child_session_id = pending_map.pop(handle.subagent_id, None)
+
+        if esc_child_session_id:
+            esc_run.child_session_id = esc_child_session_id
+            if child_map is not None:
+                child_map[esc_child_session_id] = esc_correlation
+            logger.debug("mapped escalation %s -> session %s", esc_correlation, esc_child_session_id)
+        else:
+            # Fallback: subagent_id as child_session_id (won't get token tracking)
+            if hasattr(handle, "subagent_id") and handle.subagent_id:
+                esc_run.child_session_id = handle.subagent_id
 
         # Watchdog for escalation (shorter remaining time)
         deadline = min(remaining_deadline, now + remaining_time)
@@ -105,18 +127,22 @@ def run_escalation(
         outcome["is_escalation"] = True
         outcome["escalation_trigger"] = cheap_outcome.get("status", "unknown")
         outcome["escalation_cheap_cost"] = cheap_outcome.get("spent", 0.0)
-        outcome["escalation_model"] = esc_model
+        outcome["escalation_model"] = esc_model or esc_run.response_model or ""
+        outcome["escalation_duration"] = time.monotonic() - now
+        outcome["escalation_ended_at"] = time.time()
+
+        # Merge escalation token aggregates into outcome for receipt
+        outcome["escalation_tokens_input"] = esc_run.tokens_input
+        outcome["escalation_tokens_output"] = esc_run.tokens_output
+        outcome["escalation_cache_read"] = esc_run.tokens_cache_read
+        outcome["escalation_cache_write"] = esc_run.tokens_cache_write
+        outcome["escalation_reasoning"] = esc_run.tokens_reasoning
+        outcome["escalation_api_calls"] = esc_run.api_calls
+        outcome["escalation_api_calls_detail"] = esc_run.api_calls_detail
+        outcome["escalation_run_state"] = esc_run  # for audit
+
         return outcome
 
     except Exception as exc:
         logger.warning("Escalation launch failed: %s", exc)
         return None
-
-
-def _map_child_session(esc_run: RunState, handle: Any):
-    """Try to get child_session_id from handle."""
-    try:
-        if hasattr(handle, "subagent_id") and handle.subagent_id:
-            esc_run.child_session_id = handle.subagent_id
-    except Exception:
-        pass

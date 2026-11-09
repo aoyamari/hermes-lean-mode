@@ -20,6 +20,7 @@ def format_receipt(
     is_escalated: bool = False,
     escalation_cheap_cost: float = 0.0,
     escalation_trigger: Optional[str] = None,
+    escalation_model: Optional[str] = None,
     toolsets_inherited: bool = False,
 ) -> str:
     """Build the receipt string appended to results.
@@ -46,17 +47,19 @@ def format_receipt(
             turns_str = str(run.turns_count)
 
     if is_escalated:
-        # Escalated receipt
+        # Escalated receipt — use actual escalation model name
+        cheap_model_name = cheap_model
+        full_model_name = escalation_model or model_name
         cheap_cost = escalation_cheap_cost
         total_cost = outcome.get("spent", 0.0)  # escalation attempt cost
         grand_total = cheap_cost + total_cost
 
         lines.append(
             f"⚡ Lean receipt — ESCALATED ({escalation_trigger or 'unknown'}) "
-            f"· cheap {cheap_model} ${cheap_cost:.4f} (wasted) "
-            f"+ full {model_name} ${total_cost:.4f} = total ${grand_total:.4f}"
+            f"· cheap {cheap_model_name} ${cheap_cost:.6f} (wasted) "
+            f"+ full {full_model_name} ${total_cost:.6f} = total ${grand_total:.6f}"
         )
-        lines.append(f"saved: −${cheap_cost:.4f} vs running on {model_name} directly")
+        lines.append(f"saved: −${cheap_cost:.6f} vs running on {full_model_name} directly")
     else:
         tokens_in = run.tokens_input
         tokens_out = run.tokens_output

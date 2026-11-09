@@ -100,6 +100,11 @@ def build_audit_entry(
 ) -> Dict[str, Any]:
     """Build a JSON-serializable audit entry."""
     now = outcome.get("ended_at", 0) or 0
+    # Merge escalation tokens into top-level aggregates
+    esc_input = outcome.get("escalation_tokens_input", 0) or 0
+    esc_output = outcome.get("escalation_tokens_output", 0) or 0
+    esc_cr = outcome.get("escalation_cache_read", 0) or 0
+    esc_cw = outcome.get("escalation_cache_write", 0) or 0
     entry = {
         "ts": now,
         "correlation_id": correlation_id,
@@ -109,10 +114,10 @@ def build_audit_entry(
         "toolsets": list(run_state.__dict__.get("_toolsets", [])),
         "duration_ms": int(outcome.get("duration", 0) * 1000),
         "tokens": {
-            "input": run_state.tokens_input,
-            "output": run_state.tokens_output,
-            "cache_read": run_state.tokens_cache_read,
-            "cache_write": run_state.tokens_cache_write,
+            "input": (run_state.tokens_input or 0) + esc_input,
+            "output": (run_state.tokens_output or 0) + esc_output,
+            "cache_read": (run_state.tokens_cache_read or 0) + esc_cr,
+            "cache_write": (run_state.tokens_cache_write or 0) + esc_cw,
         },
         "cost_usd_estimate": outcome.get("spent", 0.0),
         "child_session_id": run_state.child_session_id or "",
@@ -145,6 +150,17 @@ def build_audit_entry(
         }
         if cheap_outcome:
             esc["cheap_cost_usd"] = cheap_outcome.get("spent", 0.0)
+        # Include escalation run's per-call detail
+        esc_detail = outcome.get("escalation_api_calls_detail")
+        if esc_detail:
+            esc["api_calls_detail"] = esc_detail
+        # Include escalation token aggregates
+        for key in ("escalation_tokens_input", "escalation_tokens_output",
+                     "escalation_cache_read", "escalation_cache_write",
+                     "escalation_reasoning", "escalation_api_calls"):
+            val = outcome.get(key)
+            if val is not None:
+                esc[key.replace("escalation_", "")] = val
         entry["escalated"] = esc
 
     return entry

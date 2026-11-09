@@ -82,12 +82,12 @@ def test_receipt_budget_line():
 
 
 def test_receipt_escalated():
-    """Escalated receipt shows negative savings."""
+    """Escalated receipt shows escalation model name, negative savings, .6f format."""
     cfg = LeanConfig()
     cfg.prices["cheap-model"] = PriceEntry(input=0.091, output=0.182)
     cfg.prices["full-model"] = PriceEntry(input=1.0, output=5.0)
     run = RunState("test-esc", 1000.0)
-    run.response_model = "full-model"
+    run.response_model = "cheap-model"  # cheap child's model
     run.tokens_input = 500
     run.tokens_output = 200
     run.api_calls = 2
@@ -105,10 +105,14 @@ def test_receipt_escalated():
     }
 
     receipt = format_receipt(cfg, run, outcome, is_escalated=True,
-                              escalation_cheap_cost=0.001, escalation_trigger="low_confidence")
+                              escalation_cheap_cost=0.001, escalation_trigger="low_confidence",
+                              escalation_model="full-model")
     assert "ESCALATED" in receipt
     assert "low_confidence" in receipt
     assert "wasted" in receipt
+    assert "full-model" in receipt, f"Escalation model should appear:\n{receipt}"
+    assert "cheap-model" in receipt, f"Cheap model should appear:\n{receipt}"
+    assert "$0.001000" in receipt, ".6f format for small costs"
 
 
 def test_receipt_comparison():

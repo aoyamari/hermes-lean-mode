@@ -271,3 +271,79 @@ def test_missing_pending_no_tracking():
     assert run.api_calls == 0, "Unknown session should not be tracked"
 
     _reset()
+
+
+def test_escalation_session_mapping():
+    """Escalation child tokens tracked when pending_map/child_map passed."""
+    _reset()
+
+    cfg = MagicMock()
+    ctx = MagicMock()
+
+    # Create subagent_start hook that stores in _PENDING
+    lifecycle = MockLifecycle(
+        subagent_start_hook=lambda **kw: plugin._on_subagent_start(ctx, cfg, **kw)
+    )
+    ctx.subagent_lifecycle = lifecycle
+
+    # Launch cheap child
+    launch_req = {
+        "goal": "cheap task",
+        "context": "",
+        "correlation_id": "lean-esc-test-1",
+        "role": "leaf",
+        "allowed_toolsets": ("terminal",),
+        "parent_session_id": "parent-1",
+    }
+    cheap_run = _make_run("lean-esc-test-1")
+    plugin._ACTIVE_RUNS["lean-esc-test-1"] = cheap_run
+    handle = lifecycle.launch(launch_req)
+    child_sid = plugin._PENDING.pop(handle.subagent_id, None)
+    cheap_run.child_session_id = child_sid
+    plugin._CHILD_MAP[child_sid] = cheap_run.correlation_id
+
+    # Track cheap call
+    plugin._on_post_api_request(ctx, cfg,
+        session_id=child_sid,
+        usage={"input_tokens": 100, "output_tokens": 50},
+    )
+    assert cheap_run.api_calls == 1
+    assert len(cheap_run.api_calls_detail) == 1
+
+    # Now simulate escalation launch with mapping
+    esc_req = {
+        "goal": "escalated task",
+        "context": "",
+        "correlation_id": "lean-esc-test-1-esc",
+        "role": "leaf",
+        "model": "combo",
+        "allowed_toolsets": None,
+        "parent_session_id": "parent-1",
+    }
+    esc_run = RunState("lean-esc-test-1-esc", started_at=time.time())
+    esc_run.is_escalation = True
+    plugin._ACTIVE_RUNS["lean-esc-test-1-esc"] = esc_run
+
+    # Subagent_start hook fires inside this second launch
+    handle2 = lifecycle.launch(esc_req)
+    esc_child_sid = plugin._PENDING.pop(handle2.subagent_id, None)
+
+    # Map it — same dance _run_direct_launch does
+    if esc_child_sid:
+        esc_run.child_session_id = esc_child_sid
+        plugin._CHILD_MAP[esc_child_sid] = esc_run.correlation_id
+
+    # Track escalation call via post_api_request
+    assert esc_child_sid is not None
+    plugin._on_post_api_request(ctx, cfg,
+        session_id=esc_child_sid,
+        usage={"input_tokens": 200, "output_tokens": 100, "cache_read_tokens": 50},
+        model="combo",
+    )
+    assert esc_run.api_calls == 1, "Escalation child should have tracked API call"
+    assert len(esc_run.api_calls_detail) == 1, "Escalation api_calls_detail should exist"
+    assert esc_run.api_calls_detail[0]["input_tokens"] == 200
+    assert esc_run.api_calls_detail[0]["cache_read_tokens"] == 50
+
+    # Cleanup
+    _reset()

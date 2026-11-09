@@ -552,6 +552,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
 
     # ── Escalation check ──────────────────────────────────────────────
     is_escalated = False
+    escalation_run_state: Optional[RunState] = None
     if effective_escalate and not full and not no_escalate:
         if status in ("cancelled_by_budget", "cancelled_by_watchdog"):
             pass  # Never escalate on cap/timeout
@@ -562,13 +563,18 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                 parent_toolsets=get_toolset_names(),
                 parent_model=cfg.parent_model,
                 parent_provider=cfg.provider,
+                pending_map=_PENDING,
+                child_map=_CHILD_MAP,
+                active_runs=_ACTIVE_RUNS,
             )
             if esc_result:
+                escalation_run_state = esc_result.get("escalation_run_state")
                 outcome = esc_result
                 status = outcome.get("status", "failed")
                 is_escalated = True
 
     # ── Build receipt ─────────────────────────────────────────────────
+    escalation_model = outcome.get("escalation_model", "")
     receipt = format_receipt(
         cfg, run, outcome,
         parent_model=cfg.parent_model,
@@ -576,6 +582,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
         is_escalated=outcome.get("is_escalation", False),
         escalation_cheap_cost=outcome.get("escalation_cheap_cost", 0.0),
         escalation_trigger=outcome.get("escalation_trigger"),
+        escalation_model=escalation_model,
         toolsets_inherited=toolsets_inherited,
     )
 
