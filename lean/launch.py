@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .config import LeanConfig, LEAN_CONTEXT
 
@@ -31,23 +31,12 @@ def build_child_context(cfg: LeanConfig, brief: str = "") -> str:
     return ctx
 
 
-def build_toolsets(cfg: LeanConfig, parent_toolsets: Optional[List[str]] = None) -> Tuple[List[str], Optional[str]]:
-    """Build the allowed_toolsets list, validated against parent toolsets.
-
-    Returns (toolsets, error_string). error is None when valid.
-    """
-    tools = list(cfg.toolsets)
-
-    # Validate against parent
-    if parent_toolsets:
-        unknown = [t for t in tools if t not in parent_toolsets and t not in _ALWAYS_EXCLUDED]
-        if unknown:
-            return tools, f"Unknown toolsets: {', '.join(unknown)}. Valid: {', '.join(sorted(parent_toolsets))}"
-
-    # Exclude always-excluded tools
-    tools = [t for t in tools if t not in _ALWAYS_EXCLUDED]
-
-    return tools, None
+def validate_toolsets_against_parent(cfg_toolsets: List[str], parent_toolsets: List[str]) -> Optional[str]:
+    """Validate configured toolsets against parent's toolsets. Returns error or None."""
+    unknown = [t for t in cfg_toolsets if t not in parent_toolsets and t not in _ALWAYS_EXCLUDED]
+    if unknown:
+        return f"Unknown toolsets in lean config: {', '.join(unknown)}. Valid: {', '.join(sorted(parent_toolsets))}"
+    return None
 
 
 def build_launch_request(
@@ -96,14 +85,6 @@ def build_launch_request(
         req["provider"] = effective_provider
 
     return req
-
-
-def validate_toolsets_against_parent(cfg_toolsets: List[str], parent_toolsets: List[str]) -> Optional[str]:
-    """Validate configured toolsets against parent's toolsets. Returns error or None."""
-    unknown = [t for t in cfg_toolsets if t not in parent_toolsets and t not in _ALWAYS_EXCLUDED]
-    if unknown:
-        return f"Unknown toolsets in lean config: {', '.join(unknown)}. Valid: {', '.join(sorted(parent_toolsets))}"
-    return None
 
 
 def _exclude_excluded(tools: List[str]) -> List[str]:

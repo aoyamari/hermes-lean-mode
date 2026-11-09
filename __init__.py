@@ -31,9 +31,6 @@ def register(ctx):
     # ── Audit log (lazy — no plugin_data_dir call during register()) ──
     audit = _LazyAudit(ctx, cfg.audit_retention_lines)
 
-    # ── Validate toolsets against parent (best-effort) ──────────────────
-    _warn_unknown_toolsets(cfg)
-
     # ── Hooks ─────────────────────────────────────────────────────────
     ctx.register_hook(
         hook_name="post_api_request",
@@ -155,20 +152,6 @@ def _load_config(ctx) -> Any:
         logger.debug("Config file fallback: %s", exc)
 
     return LeanConfig()
-
-
-def _warn_unknown_toolsets(cfg) -> None:
-    """Warn about unknown toolsets in config (best-effort, import-heavy)."""
-    try:
-        from .lean.launch import validate_toolsets_against_parent
-        from toolsets import get_toolset_names
-        parent_toolsets = get_toolset_names()
-        if parent_toolsets:
-            err = validate_toolsets_against_parent(cfg.toolsets, parent_toolsets)
-            if err:
-                logger.warning(err)
-    except Exception:
-        pass
 
 
 # ── Hook handlers ───────────────────────────────────────────────────
@@ -376,7 +359,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
     from .lean.receipt import format_receipt
     from .lean.audit import build_audit_entry
     from .lean.escalate import run_escalation
-    from toolsets import get_toolset_names, validate_toolset
 
     # ── Resolve preset ────────────��───────────────────────────────────
     preset_context_hint = ""
@@ -430,12 +412,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
 
     child_context = build_child_context(cfg, brief_text)
 
-    # ── Validate toolsets ────────────────────────────────────────────
-    if effective_tools:
-        unknown = [t for t in effective_tools if not validate_toolset(t)]
-        if unknown:
-            return f"Error: Unknown toolsets: {', '.join(unknown)}"
-
     # ── Get parent session ───────────────────────────────────────────
     parent_session_id = None
     try:
@@ -483,7 +459,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
             if effective_escalate and "launch_failed" in cfg.escalate_on:
                 result = _try_escalate(ctx, cfg, run, audit, task, brief_text,
                                        parent_session_id, effective_timeout, effective_budget,
-                                       None, None, {"status": "launch_failed", "spent": 0.0, "error": error_msg})
+                                       None, {"status": "launch_failed", "spent": 0.0, "error": error_msg})
                 if result:
                     return result
             return f"[Lean Error] quick_run gagal: {error_msg}. Coba /quick --full."
@@ -539,7 +515,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
             esc_result = run_escalation(
                 cfg, ctx, outcome, run, parent_session_id, task, brief_text,
                 started_at + effective_timeout, effective_budget,
-                parent_toolsets=get_toolset_names(),
                 parent_model=cfg.parent_model,
                 parent_provider=cfg.provider,
                 pending_map=_PENDING,
@@ -613,16 +588,16 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
 
 
 def _try_escalate(ctx, cfg, run, audit, task, brief, parent_session_id,
-                   timeout, budget, parent_tools, parent_model, cheap_outcome) -> Optional[str]:
+                   timeout, budget, parent_model, cheap_outcome) -> Optional[str]:
     """Try escalation after a launch failure (before a subagent was created)."""
     from .lean.escalate import run_escalation
     from .lean.receipt import format_receipt
-    from toolsets import get_toolset_names
 
     deadline = time.monotonic() + timeout
     esc_result = run_escalation(
         cfg, ctx, cheap_outcome, run, parent_session_id, task, brief,
-        deadline, budget, get_toolset_names(), parent_model, cfg.provider,
+        deadline, budget,
+        parent_model=parent_model,
     )
     if esc_result:
         receipt = format_receipt(

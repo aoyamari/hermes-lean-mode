@@ -72,7 +72,6 @@ def test_escalation_uses_parent_model_and_toolsets(mock_watchdog_cls, ctx):
         brief="Do the research",
         remaining_deadline=time.time() + 300,
         remaining_budget=0.05,
-        parent_toolsets=["terminal", "web", "search", "file", "code_execution", "delegation"],
         parent_model=cfg.parent_model,
         parent_provider="",
     )
@@ -135,7 +134,6 @@ def test_escalation_empty_parent_model_defaults_to_hermes_model(mock_watchdog_cl
         brief="brief",
         remaining_deadline=time.time() + 300,
         remaining_budget=0.05,
-        parent_toolsets=["terminal", "web"],
         parent_model=cfg.parent_model,
         parent_provider="",
     )
@@ -162,7 +160,6 @@ def test_escalation_skipped_when_not_enough_time(ctx):
         brief="brief",
         remaining_deadline=time.monotonic() + 1,  # only 1s remaining (monotonic)
         remaining_budget=0.05,
-        parent_toolsets=None,
         parent_model="combo",
         parent_provider="",
     )

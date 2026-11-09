@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import LeanConfig
 from .launch import build_child_context, build_launch_request, INHERIT as _INHERIT
@@ -45,7 +45,6 @@ def run_escalation(
     brief: str,
     remaining_deadline: float,
     remaining_budget: Optional[float],
-    parent_toolsets: Optional[List[str]] = None,
     parent_model: Optional[str] = None,
     parent_provider: Optional[str] = None,
     pending_map: Optional[Dict[str, str]] = None,
