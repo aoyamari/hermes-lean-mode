@@ -134,6 +134,23 @@ def test_hook_fires_before_handle_returns():
     assert run.api_calls == 1, "post_api_request should have been tracked"
     assert run.tokens_input == 100
 
+    # Verify per-call detail was appended
+    assert len(run.api_calls_detail) == 1
+    assert run.api_calls_detail[0]["input_tokens"] == 100
+    assert run.api_calls_detail[0]["model"] == "claude-haiku-4-5"
+
+    # Simulate subagent_stop with tool_call_history
+    plugin._on_subagent_stop(ctx, cfg,
+        child_session_id=expected_sid,
+        tool_call_history=[
+            {"tool_name": "web_search", "tool_input": {}, "status": "ok"},
+            {"tool_name": "write_file", "tool_input": {}, "status": "ok"},
+        ],
+        turns_count=2,
+    )
+    assert len(run.tool_call_history) == 2
+    assert run.turns_count == 2
+
     _reset()
 
 

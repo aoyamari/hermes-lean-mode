@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import LeanConfig, PriceEntry
 
@@ -34,6 +34,11 @@ class RunState:
         self.is_escalation = False
         self.escalation_trigger: Optional[str] = None
         self._seen_buckets: set = set()  # token keys present in post_api_request payloads
+        # Per-call breakdown — appended by add_api_call()
+        self.api_calls_detail: List[Dict[str, Any]] = []
+        # From subagent_stop hook — tool_call_history + derived counts
+        self.tool_call_history: List[Dict[str, Any]] = []
+        self.turns_count: Optional[int] = None
 
     def add_api_call(self, usage: Dict[str, Any], model: str = "", response_model: str = ""):
         """Add tokens from a post_api_request hook."""
@@ -51,6 +56,16 @@ class RunState:
             self.model = model
         if response_model:
             self.response_model = response_model
+        # Per-call detail
+        self.api_calls_detail.append({
+            "input_tokens": usage.get("input_tokens", 0) or 0,
+            "output_tokens": usage.get("output_tokens", 0) or 0,
+            "cache_read_tokens": usage.get("cache_read_tokens", 0) or 0,
+            "cache_write_tokens": usage.get("cache_write_tokens", 0) or 0,
+            "reasoning_tokens": usage.get("reasoning_tokens", 0) or 0,
+            "model": model or "",
+            "response_model": response_model or "",
+        })
 
     def total_tokens(self) -> int:
         return self.tokens_input + self.tokens_output + self.tokens_cache_read + self.tokens_cache_write

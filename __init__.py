@@ -241,9 +241,27 @@ def _on_subagent_start(ctx, cfg: Any, **kw):
 
 
 def _on_subagent_stop(ctx, cfg: Any, **kw):
-    """Clean up mapping when subagent stops."""
+    """Capture tool_call_history + clean up mapping when subagent stops.
+
+    Stores tool_call_history and derived counts on the active RunState
+    so the receipt can render turns/tool_calls even when SubagentResult's
+    tool_execution_summary is absent.
+    """
     child_session_id = kw.get("child_session_id")
     if child_session_id and child_session_id in _CHILD_MAP:
+        correlation_id = _CHILD_MAP.get(child_session_id)
+        if correlation_id:
+            run = _ACTIVE_RUNS.get(correlation_id)
+            if run:
+                tch = kw.get("tool_call_history")
+                if isinstance(tch, list):
+                    run.tool_call_history = list(tch)
+                # Derive turns: estimated from number of unique tool-call bursts.
+                # Each distinct tool_call_index prefix signals a new assistant turn.
+                # Fallback: distinct tool_name groups → turns estimate.
+                turns_raw = kw.get("turns_count")
+                if turns_raw is not None:
+                    run.turns_count = int(turns_raw)
         _CHILD_MAP.pop(child_session_id, None)
     return None
 

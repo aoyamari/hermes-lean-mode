@@ -38,6 +38,13 @@ def format_receipt(
     turns_str = str(tes.get("turns", "n/a")) if isinstance(tes, dict) else "n/a"
     tool_calls_str = str(tes.get("tool_calls", "n/a")) if isinstance(tes, dict) else "n/a"
 
+    # Fallback: use run.tool_call_history when SubagentResult was empty
+    if turns_str == "n/a" and tool_calls_str == "n/a" and hasattr(run, "tool_call_history"):
+        if run.tool_call_history:
+            tool_calls_str = str(len(run.tool_call_history))
+        if run.turns_count is not None:
+            turns_str = str(run.turns_count)
+
     if is_escalated:
         # Escalated receipt
         cheap_cost = escalation_cheap_cost

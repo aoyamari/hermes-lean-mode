@@ -122,6 +122,11 @@ def build_audit_entry(
     if toolsets_inherited:
         entry["toolsets_inherited"] = True
 
+    # Per-call breakdown (only when available)
+    api_detail = getattr(run_state, "api_calls_detail", None)
+    if api_detail:
+        entry["api_calls_detail"] = api_detail
+
     if outcome.get("budget_spent"):
         entry["cost_usd_actual"] = outcome.get("budget_spent")
     if budget_usd:

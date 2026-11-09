@@ -77,6 +77,35 @@ def test_audit_no_secrets():
         assert "result_hash" in entry
 
 
+def test_audit_includes_api_calls_detail():
+    """Audit entry includes per-call breakdown when present on RunState."""
+    with tempfile.TemporaryDirectory() as tmp:
+        audit = AuditLog(Path(tmp))
+        run = RunState("test-detail", 1000.0)
+        run.tokens_input = 300
+        run.tokens_output = 150
+        run.response_model = "test-model"
+        run.api_calls_detail = [
+            {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 20,
+             "cache_write_tokens": 0, "reasoning_tokens": 0, "model": "glm", "response_model": ""},
+            {"input_tokens": 200, "output_tokens": 100, "cache_read_tokens": 80,
+             "cache_write_tokens": 0, "reasoning_tokens": 0, "model": "", "response_model": ""},
+        ]
+        run.api_calls = len(run.api_calls_detail)
+
+        outcome = {
+            "status": "succeeded", "spent": 0.001, "duration": 5.0, "ended_at": 1005.0,
+        }
+
+        entry = build_audit_entry(
+            correlation_id="test-detail", status="succeeded",
+            outcome=outcome, run_state=run,
+        )
+        assert "api_calls_detail" in entry
+        assert len(entry["api_calls_detail"]) == 2
+        assert entry["api_calls_detail"][0]["input_tokens"] == 100
+
+
 def test_audit_escalated_entry():
     """Escalated runs have escalation info in audit."""
     with tempfile.TemporaryDirectory() as tmp:

@@ -216,6 +216,32 @@ def test_receipt_turns_from_summary():
     assert "5 tool calls" in receipt, f"expected 5 tool calls, got:\n{receipt}"
 
 
+def test_receipt_turns_fallback_from_run():
+    """Receipt falls back to run.tool_call_history when SubagentResult is empty."""
+    cfg = LeanConfig()
+    cfg.prices["test-model"] = PriceEntry(input=0.1, output=0.5)
+    run = RunState("test", 1000.0)
+    run.tokens_input = 100
+    run.tokens_output = 50
+    run.response_model = "test-model"
+    run.tool_call_history = [
+        {"tool_name": "web_search", "status": "ok"},
+        {"tool_name": "web_extract", "status": "ok"},
+        {"tool_name": "web_extract", "status": "ok"},
+    ]
+    run.turns_count = 3
+
+    outcome = {
+        "status": "succeeded", "result_text": "Done",
+        "spent": 0.0, "duration": 5.0,
+        # No _subagent_result — forces fallback
+    }
+
+    receipt = format_receipt(cfg, run, outcome)
+    assert "3 turns" in receipt, f"expected 3 turns, got:\n{receipt}"
+    assert "3 tool calls" in receipt, f"expected 3 tool calls (from tool_call_history len), got:\n{receipt}"
+
+
 def test_lookup_price_suffix():
     """_lookup_price matches by suffix when exact key absent."""
     from lean.receipt import _lookup_price
