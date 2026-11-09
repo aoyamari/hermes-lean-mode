@@ -89,12 +89,10 @@ def test_escalation_uses_parent_model_and_toolsets(mock_watchdog_cls, ctx):
         "Escalation must NOT use the cheap model"
     )
 
-    # Verify escalation uses PARENT toolsets, NOT lean toolsets
-    esc_tools = set(esc_req.get("allowed_toolsets", []))
-    assert "terminal" in esc_tools, "Parent toolsets should include terminal"
-    assert "code_execution" in esc_tools, "Parent toolsets should include code_execution"
-    # Lean toolsets (web, search, file) are a subset of parent — fine
-    assert "web" in esc_tools, "Parent should include web too"
+    # Verify escalation uses PARENT toolsets (allowed_toolsets=None = inherit)
+    assert esc_req.get("allowed_toolsets") is None, (
+        f"Escalation should inherit parent toolsets (None), got {esc_req.get('allowed_toolsets')}"
+    )
 
     assert result is not None
     assert result.get("is_escalation") is True
@@ -144,6 +142,7 @@ def test_escalation_empty_parent_model_defaults_to_hermes_model(mock_watchdog_cl
 
     esc_req = ctx.subagent_lifecycle.launch.call_args[0][0]
     assert esc_req.get("model") == "combo"
+    assert esc_req.get("allowed_toolsets") is None, "Escalation should inherit parent toolsets"
 
 
 def test_escalation_skipped_when_not_enough_time(ctx):

@@ -13,6 +13,9 @@ logger = logging.getLogger("lean-mode.launch")
 # Tools always excluded from cheap runs (no grandchildren, no memory, no skills)
 _ALWAYS_EXCLUDED = {"delegate_task", "memory", "clarify", "send_message", "cronjob", "skills"}
 
+# Sentinel: pass to build_launch_request(toolsets=INHERIT) to inherit parent's toolsets
+INHERIT = object()
+
 
 def build_child_context(cfg: LeanConfig, brief: str = "") -> str:
     """Build the context string for the child subagent.
@@ -65,9 +68,17 @@ def build_launch_request(
     effective_model = model or cfg.model or None  # None = use delegation default
     effective_provider = provider or cfg.provider or None
 
-    resolved_tools = toolsets or cfg.toolsets
+    resolved_tools = None
+    if toolsets is INHERIT:
+        resolved_tools = None  # inherit parent — allowed_toolsets stays None
+    elif toolsets is not None:
+        resolved_tools = toolsets
+    else:
+        resolved_tools = cfg.toolsets
+
     # Exclude always-blocked tools
-    resolved_tools = [t for t in resolved_tools if t not in _ALWAYS_EXCLUDED]
+    if resolved_tools is not None:
+        resolved_tools = [t for t in resolved_tools if t not in _ALWAYS_EXCLUDED]
 
     correlation_id = f"lean-{uuid.uuid4().hex[:12]}"
 

@@ -474,15 +474,30 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
     try:
         handle = ctx.subagent_lifecycle.launch(launch_req)
     except Exception as exc:
-        _ACTIVE_RUNS.pop(correlation_id, None)
         error_msg = str(exc)
-        if effective_escalate and "launch_failed" in cfg.escalate_on:
-            result = _try_escalate(ctx, cfg, run, audit, task, brief_text,
-                                   parent_session_id, effective_timeout, effective_budget,
-                                   None, None, {"status": "launch_failed", "spent": 0.0, "error": error_msg})
-            if result:
-                return result
-        return f"Error launching cheap subagent: {error_msg}. Try /quick --full."
+        # If toolsets aren't available in parent, retry with None (inherit parent)
+        if "broaden parent permissions" in error_msg.lower():
+            logger.info(
+                "lean run %s: toolsets %s not in parent, retrying with inherit",
+                correlation_id, launch_req.get("allowed_toolsets"),
+            )
+            launch_req["allowed_toolsets"] = None
+            try:
+                handle = ctx.subagent_lifecycle.launch(launch_req)
+            except Exception as exc2:
+                _ACTIVE_RUNS.pop(correlation_id, None)
+                return (f"[Lean Error] quick_run gagal: {exc2}\n"
+                        f"Context: parent tidak punya toolsets {cfg.toolsets}.\n"
+                        f"Coba: /quick --full")
+        else:
+            _ACTIVE_RUNS.pop(correlation_id, None)
+            if effective_escalate and "launch_failed" in cfg.escalate_on:
+                result = _try_escalate(ctx, cfg, run, audit, task, brief_text,
+                                       parent_session_id, effective_timeout, effective_budget,
+                                       None, None, {"status": "launch_failed", "spent": 0.0, "error": error_msg})
+                if result:
+                    return result
+            return f"[Lean Error] quick_run gagal: {error_msg}. Coba /quick --full."
 
     # ── Map child session via _PENDING ─────────────────────────────────
     # subagent_start hook fired inside launch() and stored

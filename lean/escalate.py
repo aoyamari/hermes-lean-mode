@@ -7,7 +7,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import LeanConfig
-from .launch import build_child_context, build_launch_request
+from .launch import build_child_context, build_launch_request, INHERIT as _INHERIT
 from .watchdog import RunState, Watchdog
 
 logger = logging.getLogger("lean-mode.escalate")
@@ -49,10 +49,11 @@ def run_escalation(
     parent_model: Optional[str] = None,
     parent_provider: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Launch escalation attempt with parent model + toolsets.
+    """Launch escalation attempt with parent model + full toolsets.
 
-    Returns escalated outcome dict with 'is_escalation' flag, or None if escalation
-    was skipped.
+    Escalation passes allowed_toolsets=None (inherit parent) so the
+    escalation child has the SAME capability as the parent, regardless
+    of lean.toolsets restriction.
     """
     now = time.monotonic()
     remaining_time = remaining_deadline - now
@@ -63,16 +64,16 @@ def run_escalation(
     if remaining_budget is not None and remaining_budget <= 0:
         return None  # no budget left
 
-    # Build escalation launch request with parent model + full toolsets
+    # Build escalation launch request with parent model + parent toolsets
+    # allowed_toolsets=None = inherit parent's full toolsets
     esc_context = build_child_context(cfg, brief)
     esc_model = parent_model or None
     esc_provider = parent_provider or None
-    esc_tools = list(parent_toolsets) if parent_toolsets else None
 
     esc_req = build_launch_request(
         cfg, task, esc_context, parent_session_id,
         model=esc_model, provider=esc_provider,
-        toolsets=esc_tools,
+        toolsets=_INHERIT,  # inherit parent's toolsets
     )
     esc_correlation = f"{cheap_run.correlation_id}-esc"
     esc_req["correlation_id"] = esc_correlation
