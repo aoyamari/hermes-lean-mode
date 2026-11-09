@@ -107,3 +107,50 @@ def test_stats_skipped_bad_entries():
     assert result["skipped_count"] == 2, f"Expected 2 skipped, got {result['skipped_count']}"
     assert result["total_runs"] == 2, f"Expected 2 valid runs, got {result['total_runs']}"
     assert result["succeeded"] == 2
+
+
+def test_stats_legacy_entries():
+    """Legacy entries without vs_non_lean_usd get it recomputed from tokens + prices."""
+    from lean.config import PriceEntry
+    prices = {
+        "combo": PriceEntry(input=1.0, output=5.0, cache_read=0.5, cache_write=1.0),
+    }
+    parent_model = "combo"
+
+    audit = AuditLog.__new__(AuditLog)
+    now_ts = 2000.0
+    audit.read_all = lambda: [
+        # Entry without vs_non_lean_usd: should be recomputed
+        {"ts": now_ts, "status": "succeeded", "cost_usd_estimate": 0.001,
+         "tokens": {"input": 100, "output": 50, "cache_read": 20, "cache_write": 0}},
+        # New entry with vs_non_lean_usd
+        {"ts": now_ts + 100, "status": "succeeded", "cost_usd_estimate": 0.002,
+         "vs_non_lean_usd": 0.006, "tokens": {"input": 200, "output": 100}},
+        # Escalated legacy entry (no vs_non_lean_usd)
+        {"ts": now_ts + 200, "status": "escalated_low_confidence", "cost_usd_estimate": 0.003,
+         "tokens": {"input": 100, "output": 50},
+         "escalated": {"tokens_input": 200, "tokens_output": 100, "cache_read": 50, "cheap_cost_usd": 0.0005}},
+        # Entry where parent_model price lookup fails
+        {"ts": now_ts + 300, "status": "succeeded", "cost_usd_estimate": 0.004,
+         "tokens": {"input": 50, "output": 25}},
+    ]
+    result = compute_stats(audit, prices=prices, parent_model=parent_model)
+
+    # Entry 1: tokens=(100 in, 50 out, 20 cr) @ combo=1/5/0.5 = 100*1e-6 + 50*5e-6 + 20*0.5e-6 = 0.00036
+    # Entry 2: vs_non_lean_usd=0.006 (pre-computed)
+    # Entry 3: cheap=(100 in, 50 out) + esc=(200 in, 100 out, 50 cr) = (300 in, 150 out, 50 cr)
+    #          @ combo = 300*1e-6 + 150*5e-6 + 50*0.5e-6 = 0.001075
+    # Entry 4: tokens=(50 in, 25 out) no escalation -> also recomputed
+    #          @ combo = 50*1e-6 + 25*5e-6 = 0.000175
+    expected_vnl = 0.00036 + 0.006 + 0.001075 + 0.000175  # = 0.00761
+    assert abs(result["vs_non_lean_total"] - expected_vnl) < 0.00001, (
+        f"Expected {expected_vnl}, got {result['vs_non_lean_total']}"
+    )
+    # Savings counted = 4 (all entries have cost + parent_model price)
+    assert result["savings_counted_runs"] == 4
+    assert result["savings_unknown_runs"] == 0
+
+    # Net saved = vs_non_lean_total - total_spent
+    # total_spent = 0.001 + 0.002 + 0.003 + 0.004 = 0.01
+    expected_net = expected_vnl - 0.01
+    assert abs(result["net_saved"] - expected_net) < 0.00001

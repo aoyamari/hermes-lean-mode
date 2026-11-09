@@ -225,6 +225,10 @@ def format_stats_output(
     if unknown:
         lines.append(f"  {unknown} runs with unknown cost (not counted in totals)")
 
+    no_compare = stats.get("savings_unknown_runs", 0)
+    if no_compare:
+        lines.append(f"  {no_compare} runs without non-Lean comparison (legacy entries)")
+
     if skipped:
         lines.append(f"  ⚠ {skipped} entries skipped (bad or missing timestamp)")
 

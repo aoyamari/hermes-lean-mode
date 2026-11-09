@@ -307,7 +307,8 @@ def _handle_quick_command(ctx, cfg: Any, audit: Any, raw_args: str) -> str:
     cmd = parse_quick(raw_args)
 
     if cmd.subcommand == "stats":
-        stats = compute_stats(audit, days=cmd.days or 7)
+        stats = compute_stats(audit, days=cmd.days or 7,
+                              prices=cfg.prices, parent_model=cfg.parent_model)
         return format_stats_output(stats)
 
     if cmd.subcommand == "config":

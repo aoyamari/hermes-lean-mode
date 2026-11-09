@@ -10,13 +10,20 @@ from .audit import AuditLog
 logger = logging.getLogger("lean-mode.stats")
 
 
-def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
+def compute_stats(audit: AuditLog, days: int = 7,
+                   prices: Optional[Dict[str, Any]] = None,
+                   parent_model: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate stats from audit log. Returns dict with summary fields.
 
     ``net_saved`` = Σ (vs_non_lean_usd − cost_usd_estimate) for EVERY run
     that has both values. Escalated runs contribute negative savings
-    (cheap cost wasted). Runs without ``vs_non_lean_usd`` are excluded
-    from the savings total.
+    (cheap cost wasted). 
+
+    For legacy entries without ``vs_non_lean_usd``, computes it from the
+    entry's ``tokens`` (plus ``escalated.tokens_*`` if present) using
+    ``parent_model`` price from ``prices``. If ``prices`` or
+    ``parent_model`` are missing, those entries are excluded from savings
+    and reported as ``savings_unknown_runs``.
 
     Entries with ``ts == 0`` or missing status are counted in
     ``skipped_count`` and excluded from aggregates.
@@ -101,9 +108,34 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
 
         # Net saved = Σ(vs_non_lean − actual) per run
         vnl = entry.get("vs_non_lean_usd", 0.0)
-        if vnl and vnl > 0 and cost:
+        if vnl and vnl > 0:
             vs_non_lean_total += vnl
             savings_counted += 1
+        elif cost and prices and parent_model:
+            # Legacy entry: compute vs_non_lean from tokens + prices
+            merged_tokens = dict(entry.get("tokens", {}))
+            esc_info = entry.get("escalated", {})
+            if esc_info:
+                for key in ("tokens_input", "tokens_output", "cache_read", "cache_write"):
+                    val = esc_info.get(key)
+                    if val is not None:
+                        merged_key = key.replace("tokens_", "").replace("cache_", "cache_")
+                        if key == "tokens_input":
+                            merged_tokens["input"] = (merged_tokens.get("input", 0) or 0) + val
+                        elif key == "tokens_output":
+                            merged_tokens["output"] = (merged_tokens.get("output", 0) or 0) + val
+                        elif key == "cache_read":
+                            merged_tokens["cache_read"] = (merged_tokens.get("cache_read", 0) or 0) + val
+                        elif key == "cache_write":
+                            merged_tokens["cache_write"] = (merged_tokens.get("cache_write", 0) or 0) + val
+            # Reprice at parent_model rates
+            from .audit import _reprice
+            computed_vnl = _reprice(merged_tokens, parent_model, prices)
+            if computed_vnl > 0:
+                vs_non_lean_total += computed_vnl
+                savings_counted += 1
+            else:
+                savings_unknown += 1
         else:
             savings_unknown += 1
 
