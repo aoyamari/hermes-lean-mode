@@ -205,6 +205,7 @@ def format_stats_output(
     total_spent = stats.get("total_spent", 0.0)
     total_saved = stats.get("total_saved", 0.0)
     label = "estimate" if stats.get("is_estimate", True) else "actual"
+    skipped = stats.get("skipped_count", 0)
     lines.append(f"  spent: ${_format_cost(total_spent)} ({label})")
 
     if total_saved >= 0:
@@ -215,6 +216,9 @@ def format_stats_output(
     unknown = stats.get("unknown_cost_runs", 0)
     if unknown:
         lines.append(f"  {unknown} runs with unknown cost (not counted in totals)")
+
+    if skipped:
+        lines.append(f"  ⚠ {skipped} entries skipped (bad or missing timestamp)")
 
     top_preset = stats.get("top_preset")
     if top_preset:

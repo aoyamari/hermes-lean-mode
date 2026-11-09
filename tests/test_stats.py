@@ -68,3 +68,19 @@ def test_stats_preset_tracking():
         audit = _make_audit(Path(tmp), entries)
         stats = compute_stats(audit, days=7)
         assert stats["top_preset"] == "research"
+    assert stats["skipped_count"] == 0
+
+
+def test_stats_skipped_bad_entries():
+    """Entries with ts=0 are reported as skipped, not silently dropped."""
+    audit = AuditLog.__new__(AuditLog)
+    audit.read_all = lambda: [
+        {"ts": 0, "status": "succeeded", "cost_usd_estimate": 0.001},
+        {"ts": 1000.0, "status": "succeeded", "cost_usd_estimate": 0.002},
+        {"ts": 1100.0, "status": "succeeded", "cost_usd_estimate": 0.003},
+        {"ts": 0, "status": "low_confidence", "cost_usd_estimate": 0.0, "escalated": {"status": "succeeded"}},
+    ]
+    result = compute_stats(audit)
+    assert result["skipped_count"] == 2, f"Expected 2 skipped, got {result['skipped_count']}"
+    assert result["total_runs"] == 2, f"Expected 2 valid runs, got {result['total_runs']}"
+    assert result["succeeded"] == 2

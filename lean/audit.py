@@ -162,7 +162,7 @@ def build_audit_entry(
         esc = {
             "trigger": outcome.get("escalation_trigger", cheap_outcome.get("status", "")),
             "model": outcome.get("escalation_model", ""),
-            "status": status,  # original cheap attempt status
+            "status": status,  # escalation attempt's outcome (succeeded/failed/etc.)
             "cost_usd_estimate": esc_cost,
         }
         if cheap_outcome:

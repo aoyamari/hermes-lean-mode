@@ -173,6 +173,8 @@ def test_stats_output():
     assert "$4.21" in output
     assert "@research" in output
     assert "unknown" in output
+    # No skipped entries
+    assert "skipped" not in output
 
 
 def test_receipt_toolsets_inherited():

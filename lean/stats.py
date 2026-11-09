@@ -17,10 +17,35 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
     Escalated runs have status ``escalated_<cheap_status>``; they count
     as escalated but NOT as succeeded. ``total_saved`` is negative when
     escalation wasted cheap-model spend.
-    """
-    entries = audit.read_recent(days=days)
 
-    total = len(entries)
+    Entries with ``ts == 0`` or missing required fields are counted in
+    ``skipped_count`` and excluded from aggregates.
+    """
+    raw = audit.read_all()
+    total_raw = len(raw)
+
+    # Filter out bad entries: ts=0 or missing status
+    entries = []
+    skipped_count = 0
+    for e in raw:
+        ts = e.get("ts", 0)
+        if not ts or not isinstance(ts, (int, float)) or ts <= 0:
+            skipped_count += 1
+            continue
+        if not e.get("status"):
+            skipped_count += 1
+            continue
+        entries.append(e)
+
+    # Apply time window on clean entries
+    now_ts = max((e.get("ts", 0) for e in entries), default=0)
+    import time as _time
+    if not now_ts:
+        now_ts = _time.time()
+    cutoff = now_ts - (days * 86400)
+    recent = [e for e in entries if e.get("ts", 0) >= cutoff]
+
+    total = len(recent)
     if total == 0:
         return {
             "period": f"last {days} days",
@@ -34,6 +59,7 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
             "is_estimate": True,
             "unknown_cost_runs": 0,
             "top_preset": None,
+            "skipped_count": skipped_count,
         }
 
     succeeded = 0
@@ -46,7 +72,7 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
     unknown_cost_runs = 0
     preset_counts: Dict[str, int] = {}
 
-    for entry in entries:
+    for entry in recent:
         status = entry.get("status", "")
         escalated_info = entry.get("escalated")
 
@@ -97,4 +123,5 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         "is_estimate": not has_actual,
         "unknown_cost_runs": unknown_cost_runs,
         "top_preset": top_preset,
+        "skipped_count": skipped_count,
     }
