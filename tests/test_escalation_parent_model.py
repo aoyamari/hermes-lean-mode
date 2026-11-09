@@ -11,7 +11,6 @@ _plugin_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_plugin_root))
 
 from lean.config import LeanConfig
-from lean.escalate import should_escalate
 from lean.watchdog import RunState
 
 
@@ -99,10 +98,28 @@ def test_escalation_uses_parent_model_and_toolsets(mock_watchdog_cls, ctx):
 
 def test_parent_model_auto_resolved():
     """When lean.parent_model is empty, auto-resolve from Hermes config."""
-    cfg = LeanConfig.from_config({"model": "surplus/glm-5.3-flash"})
+    hermes_config = {"model": {"default": "combo"}}
+    cfg = LeanConfig.from_config({"model": "surplus/glm-5.3-flash"}, hermes_config=hermes_config)
     assert cfg.parent_model == "combo", (
         f"Expected auto-resolved parent_model='combo', got '{cfg.parent_model}'"
     )
+
+
+def test_parent_model_auto_resolved_from_custom_provider():
+    """Falls back to the first custom_providers model when model.default is absent."""
+    hermes_config = {"custom_providers": [{"base_url": "http://x", "model": "combo"}]}
+    cfg = LeanConfig.from_config({"model": "cheap/model"}, hermes_config=hermes_config)
+    assert cfg.parent_model == "combo"
+
+
+def test_parent_model_explicit_wins_and_no_config_is_empty():
+    """Explicit lean.parent_model wins; with no Hermes config it stays empty."""
+    cfg = LeanConfig.from_config(
+        {"model": "cheap/model", "parent_model": "big/model"},
+        hermes_config={"model": {"default": "combo"}},
+    )
+    assert cfg.parent_model == "big/model"
+    assert LeanConfig.from_config({"model": "cheap/model"}).parent_model == ""
 
 
 @patch("lean.escalate.Watchdog")
@@ -112,8 +129,10 @@ def test_escalation_empty_parent_model_defaults_to_hermes_model(mock_watchdog_cl
         model="surplus/glm-5.3-flash",
         parent_model="",  # will be auto-resolved in from_config
     )
-    # Trigger auto-resolve
-    cfg = LeanConfig.from_config({"model": "surplus/glm-5.3-flash"})
+    # Trigger auto-resolve from a stub Hermes config (no real config.yaml read)
+    cfg = LeanConfig.from_config(
+        {"model": "surplus/glm-5.3-flash"}, hermes_config={"model": {"default": "combo"}}
+    )
     assert cfg.parent_model == "combo", "Should auto-resolve to combo"
 
     cheap_run = RunState("lean-test-3", started_at=time.time(), budget_usd=0.01)
@@ -138,6 +157,7 @@ def test_escalation_empty_parent_model_defaults_to_hermes_model(mock_watchdog_cl
         parent_provider="",
     )
 
+    assert result is not None
     esc_req = ctx.subagent_lifecycle.launch.call_args[0][0]
     assert esc_req.get("model") == "combo"
     assert esc_req.get("allowed_toolsets") is None, "Escalation should inherit parent toolsets"

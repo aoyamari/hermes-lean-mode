@@ -1,10 +1,8 @@
 """Tests for receipt generation."""
 
-import pytest
 from lean.config import LeanConfig, PriceEntry
 from lean.receipt import format_receipt, format_stats_output
 from lean.watchdog import RunState
-from lean.stats import compute_stats
 
 
 def test_receipt_format():
@@ -319,7 +317,7 @@ def test_lookup_price_ambiguous_suffix():
 
 def test_config_output_bundle_warning():
     """format_config_output warns when toolsets contain bundles."""
-    from lean.config import LeanConfig, PresetEntry, PriceEntry
+    from lean.config import LeanConfig
     from lean.receipt import format_config_output
 
     # Config with bundle toolsets

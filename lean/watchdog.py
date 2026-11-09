@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from .config import LeanConfig, PriceEntry
 
@@ -135,7 +135,7 @@ class Watchdog:
                 spent = self.run.spent_usd(self.cfg.prices)
                 if spent >= budget:
                     overshoot = spent - budget
-                    overshoot_note = f" (overshoot: in-flight call)" if overshoot > 0 else ""
+                    overshoot_note = " (overshoot: in-flight call)" if overshoot > 0 else ""
                     outcome = self._do_cancel(
                         "cancelled_by_budget",
                         f"lean budget: ${spent:.4f} >= ${budget}{overshoot_note}",

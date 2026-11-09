@@ -1,6 +1,5 @@
 """Tests for audit log."""
 
-import json
 import tempfile
 from pathlib import Path
 from lean.audit import AuditLog, build_audit_entry
@@ -61,8 +60,7 @@ def test_audit_rotation():
 
 def test_audit_no_secrets():
     """Goal is truncated, no secrets in log."""
-    with tempfile.TemporaryDirectory() as tmp:
-        audit = AuditLog(Path(tmp))
+    with tempfile.TemporaryDirectory():
         run = RunState("test", 1000.0)
         run.tokens_input = 10
         run.response_model = "m"
@@ -79,8 +77,7 @@ def test_audit_no_secrets():
 
 def test_audit_includes_api_calls_detail():
     """Audit entry includes per-call breakdown when present on RunState."""
-    with tempfile.TemporaryDirectory() as tmp:
-        audit = AuditLog(Path(tmp))
+    with tempfile.TemporaryDirectory():
         run = RunState("test-detail", 1000.0)
         run.tokens_input = 300
         run.tokens_output = 150

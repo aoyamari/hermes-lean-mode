@@ -1,6 +1,5 @@
 """Tests for stats aggregation."""
 
-import json
 import tempfile
 import time
 from pathlib import Path

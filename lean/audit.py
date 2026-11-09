@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from .config import LeanConfig, PriceEntry
+from .config import PriceEntry
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .watchdog import RunState
 
 logger = logging.getLogger("lean-mode.audit")
 
@@ -105,7 +107,7 @@ def build_audit_entry(
     correlation_id: str,
     status: str,
     outcome: Dict[str, Any],
-    run_state: "RunState",  # noqa: F821
+    run_state: "RunState",
     cheap_outcome: Optional[Dict[str, Any]] = None,
     parent_model: Optional[str] = None,
     prices: Optional[Dict[str, PriceEntry]] = None,

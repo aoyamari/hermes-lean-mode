@@ -12,7 +12,6 @@ def test_watchdog_normal_completion():
     cfg.poll_interval_seconds = 0.1
     run = RunState("test", time.monotonic())
 
-    mock_handle = MagicMock()
     wait_result = MagicMock()
     wait_result.timed_out = False
     mock_wait = MagicMock(return_value=wait_result)

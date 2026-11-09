@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .config import LeanConfig
 from .launch import build_child_context, build_launch_request, INHERIT as _INHERIT
@@ -115,7 +115,6 @@ def run_escalation(
 
         # Remaining wall-clock time for escalation
         esc_remaining = remaining_deadline - time.monotonic()
-        esc_deadline = time.monotonic() + max(0, esc_remaining)
         watchdog = Watchdog(
             cfg=cfg,
             run=esc_run,

@@ -132,7 +132,7 @@ def _load_config(ctx) -> Any:
         from hermes_cli.config import load_config_readonly
         full_config = load_config_readonly() or {}
         lean_raw = full_config.get("lean", {})
-        return LeanConfig.from_config(lean_raw)
+        return LeanConfig.from_config(lean_raw, hermes_config=full_config)
     except ImportError:
         # Outside gateway process (plugin tests, validation) — read file directly
         pass
@@ -142,12 +142,10 @@ def _load_config(ctx) -> Any:
     try:
         from hermes_constants import get_hermes_home
         import yaml
-        from pathlib import Path
         config_path = get_hermes_home() / "config.yaml"
         if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text())
-            lean_raw = (raw or {}).get("lean", {})
-            return LeanConfig.from_config(lean_raw)
+            raw = yaml.safe_load(config_path.read_text()) or {}
+            return LeanConfig.from_config(raw.get("lean", {}), hermes_config=raw)
     except Exception as exc:
         logger.debug("Config file fallback: %s", exc)
 
@@ -507,7 +505,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
 
     # ── Escalation check ──────────────────────────────────────────────
     is_escalated = False
-    escalation_run_state: Optional[RunState] = None
     if effective_escalate and not full and not no_escalate:
         if status in ("cancelled_by_budget", "cancelled_by_watchdog"):
             pass  # Never escalate on cap/timeout
@@ -522,7 +519,6 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                 active_runs=_ACTIVE_RUNS,
             )
             if esc_result:
-                escalation_run_state = esc_result.get("escalation_run_state")
                 outcome = esc_result
                 # Duration/ended_at cover the WHOLE run (cheap + escalation)
                 outcome["duration"] = time.monotonic() - started_at

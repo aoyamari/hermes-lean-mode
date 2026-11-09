@@ -3,7 +3,6 @@
 import time
 from unittest.mock import MagicMock
 
-import pytest
 
 from lean.config import LeanConfig
 from lean.watchdog import RunState, Watchdog

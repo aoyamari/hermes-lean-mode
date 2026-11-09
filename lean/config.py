@@ -3,72 +3,30 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("lean-mode")
 
-_HERMES_HOME = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
 
+def _find_hermes_default_model(hermes_config: Optional[Dict[str, Any]]) -> str:
+    """Return the main agent's model ID from an already-loaded Hermes config.
 
-def _find_hermes_default_model() -> str:
-    """Read the main model ID from Hermes config.yaml.
-
-    Looks for the first custom_providers entry's `model:` field, which
-    is the default model for the main agent. Returns '' if not found.
-    Uses json/yaml if available, otherwise a simple line-by-line parser.
+    Looks at ``model.default`` (or ``model`` when it is a plain string), then
+    falls back to the first ``custom_providers`` entry's ``model``. Takes the
+    config dict as an argument so the plugin never reads config files itself.
+    Returns '' when nothing is found.
     """
-    config_path = os.path.join(_HERMES_HOME, "config.yaml")
-    try:
-        with open(config_path) as f:
-            text = f.read()
-    except Exception:
+    if not isinstance(hermes_config, dict):
         return ""
-
-    # Try yaml first
-    try:
-        import yaml
-        data = yaml.safe_load(text)
-        providers = data.get("custom_providers", [])
-        for p in providers:
-            model = p.get("model", "")
-            if model:
-                return model
-        return ""
-    except ImportError:
-        pass
-
-    # Fallback: line-by-line parser for YAML without nesting comprehension
-    import re
-    in_providers = False
-    bracket_depth = 0
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped == "custom_providers:":
-            in_providers = True
-            continue
-        if in_providers:
-            bracket_depth += stripped.count("[") - stripped.count("]")
-            bracket_depth += stripped.count("{") - stripped.count("}")
-            if bracket_depth < 0:
-                bracket_depth = 0
-            if stripped.startswith("- "):  # new list entry
-                # Check for model: directly inside list item
-                if "model:" in stripped:
-                    m = re.search(r'model:\s*["\']?([^\s"\'#}]+)', stripped)
-                    if m:
-                        return m.group(1)
-            elif stripped.startswith("model:"):
-                # Indented model: key inside a list item
-                m = re.search(r'model:\s*["\']?([^\s"\'#}]+)', stripped)
-                if m:
-                    return m.group(1)
-            elif bracket_depth == 0 and not line.startswith(" "):
-                # Back to top-level (line starts at column 0, no indent)
-                in_providers = False
+    model = hermes_config.get("model")
+    if isinstance(model, str) and model:
+        return model
+    if isinstance(model, dict) and model.get("default"):
+        return str(model["default"])
+    for p in hermes_config.get("custom_providers") or []:
+        if isinstance(p, dict) and p.get("model"):
+            return str(p["model"])
     return ""
 
 
@@ -111,21 +69,30 @@ class LeanConfig:
     audit_retention_lines: int = 1000
 
     @classmethod
-    def from_config(cls, raw: Optional[Dict[str, Any]]) -> "LeanConfig":
+    def from_config(
+        cls,
+        raw: Optional[Dict[str, Any]],
+        hermes_config: Optional[Dict[str, Any]] = None,
+    ) -> "LeanConfig":
+        """Build config from the ``lean:`` section.
+
+        ``hermes_config`` is the full Hermes config (already loaded by the
+        caller); it is only used to auto-resolve ``parent_model``.
+        """
         if not raw:
             return cls()
         cfg = cls()
         cfg.model = raw.get("model", "")
-        if cfg.model == "combo":
-            logger.warning(
-                "lean.model set to 'combo' — this is the MAIN combo model, "
-                "not a cheap model. You probably want surplus/glm-5.3-flash."
-            )
         cfg.parent_model = raw.get("parent_model", "")
         if not cfg.parent_model:
-            cfg.parent_model = _find_hermes_default_model()
+            cfg.parent_model = _find_hermes_default_model(hermes_config)
             if cfg.parent_model:
                 logger.info("auto-resolved parent_model to %s from Hermes config", cfg.parent_model)
+        if cfg.model and cfg.model == cfg.parent_model:
+            logger.warning(
+                "lean.model equals parent_model (%s): Lean will run but cannot save money",
+                cfg.model,
+            )
         cfg.provider = raw.get("provider", "")
         if isinstance(raw.get("toolsets"), list):
             cfg.toolsets = raw["toolsets"]

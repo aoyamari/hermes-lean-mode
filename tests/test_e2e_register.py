@@ -57,7 +57,6 @@ def _load_plugin():
     _install_plugins_mock()
 
     # Build a temporary package directory mirroring the plugin structure
-    import importlib
     pkg_root = Path(tempfile.mkdtemp(suffix="_lean_mode_pkg"))
 
     pkg_init = pkg_root / "lean_mode" / "__init__.py"
@@ -375,7 +374,6 @@ def test_e2e_quick_run_tool_handler():
             data_dir = Path(tmp) / "plugin-data" / "lean-mode"
             data_dir.mkdir(parents=True, exist_ok=True)
 
-            from unittest.mock import patch
             import sys as _sys
 
             # Mock toolsets so imports inside _run_direct_launch work

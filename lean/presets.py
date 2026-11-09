@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from .config import LeanConfig, PresetEntry
+from .config import LeanConfig
 
 
 def resolve_preset(

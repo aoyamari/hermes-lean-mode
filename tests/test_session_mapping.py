@@ -13,7 +13,6 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 # Load __init__.py as a module (it's the plugin's main module)
 _plugin_root = Path(__file__).resolve().parent.parent

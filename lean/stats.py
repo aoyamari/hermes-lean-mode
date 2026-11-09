@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from .audit import AuditLog
 
@@ -29,7 +29,6 @@ def compute_stats(audit: AuditLog, days: int = 7,
     ``skipped_count`` and excluded from aggregates.
     """
     raw = audit.read_all()
-    total_raw = len(raw)
 
     # Filter out bad entries: ts=0 or missing status
     entries = []
@@ -119,7 +118,6 @@ def compute_stats(audit: AuditLog, days: int = 7,
                 for key in ("tokens_input", "tokens_output", "cache_read", "cache_write"):
                     val = esc_info.get(key)
                     if val is not None:
-                        merged_key = key.replace("tokens_", "").replace("cache_", "cache_")
                         if key == "tokens_input":
                             merged_tokens["input"] = (merged_tokens.get("input", 0) or 0) + val
                         elif key == "tokens_output":
