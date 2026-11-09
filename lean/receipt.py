@@ -132,16 +132,24 @@ def _comparison_line(cfg: LeanConfig, run: RunState, parent_model: Optional[str]
 
 
 def _lookup_price(prices: Dict[str, PriceEntry], model_key: str) -> Optional[PriceEntry]:
-    """Look up a price entry by exact key, then by suffix match."""
+    """Look up a price entry by exact key, then by unique suffix match.
+
+    Exact match first. Suffix match (e.g. 'glm-5.3-flash' matching
+    'surplus/glm-5.3-flash') only if exactly ONE price entry matches.
+    Returns None if 0 or >1 suffix matches (ambiguous).
+    """
     if not model_key:
         return None
     # Exact match first
     if model_key in prices:
         return prices[model_key]
     # Suffix match: e.g. 'glm-5.3-flash' matches 'surplus/glm-5.3-flash'
+    matches = []
     for key in prices:
         if key.endswith("/" + model_key) or model_key.endswith(key):
-            return prices[key]
+            matches.append(key)
+    if len(matches) == 1:
+        return prices[matches[0]]
     return None
 
 
@@ -190,6 +198,17 @@ def format_config_output(cfg: "LeanConfig") -> str:  # noqa: F821
     lines.append(f"  parent_model: {cfg.parent_model or '(auto-resolved)'}")
     lines.append(f"  provider: {cfg.provider or '(use default)'}")
     lines.append(f"  toolsets: {cfg.toolsets}")
+
+    # Warn if parent platform uses bundles (hermes- prefix)
+    parent_ts = cfg.toolsets
+    bundles = [t for t in parent_ts if t.startswith("hermes-")]
+    if bundles:
+        lines.append(
+            f"  ⚠ parent uses bundle(s): {', '.join(bundles)} — "
+            f"narrowing unavailable. Set platform_toolsets.<platform> "
+            f"to granular toolsets (web, terminal, file, ...) instead."
+        )
+
     lines.append(f"  escalate: {cfg.escalate}")
     lines.append(f"  escalate_on: {cfg.escalate_on}")
     lines.append(f"  timeout_seconds: {cfg.timeout_seconds}")

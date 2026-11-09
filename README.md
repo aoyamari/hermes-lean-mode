@@ -140,6 +140,55 @@ hermes plugins validate . --install-deps
 hermes -c "/quick --raw echo hello world"
 ```
 
+## Known Hermes Limitation: Bundle Toolsets & Child Narrowing
+
+When a platform parent uses **bundle toolsets** (names starting with `hermes-`, e.g. `hermes-telegram`), the Hermes subagent framework checks child `allowed_toolsets` against **literal toolset names** in the parent's `enabled_toolsets`. It does **NOT** look inside bundles to see what tools they contain.
+
+**Consequence:** If the parent has `enabled_toolsets = ["hermes-telegram", "lean"]` and Lean tries to narrow the child to `["web", "search", "file"]`, the child launch fails with `"Requested toolsets would broaden parent permissions"` — even though `hermes-telegram` internally contains `web_search`, `web_extract`, `read_file`, `write_file`, etc.
+
+**Workaround:** Replace the bundle with its granular equivalent in `config.yaml`:
+
+```yaml
+# Instead of:
+platform_toolsets:
+  telegram:
+    - hermes-telegram
+    - lean
+
+# Use:
+platform_toolsets:
+  telegram:
+    - web
+    - terminal
+    - file
+    - vision
+    - image_gen
+    - skills
+    - browser
+    - tts
+    - todo
+    - memory
+    - session_search
+    - clarify
+    - code_execution
+    - delegation
+    - cronjob
+    - computer_use
+    - connections
+    - kanban
+    - lean
+```
+
+Granular toolsets that cover the same tools as the `hermes-telegram` bundle (which is exactly `_HERMES_CORE_TOOLS` — no Telegram-specific extras). With granular toolsets, Lean can narrow the child to e.g. `["web", "terminal", "file"]` and the framework correctly validates each toolset name.
+
+If you can't switch to granular toolsets, Lean falls back to `allowed_toolsets=None` (inherit all parent tools). The receipt will show:
+```
+toolsets: inherited from parent (narrowing rejected) · skills: ON
+```
+And the audit log will contain `"toolsets_inherited": true`.
+
+For `/quick config`, a warning is shown when the parent uses bundles.
+
 ## Competitor Comparison
 
 | Rival | Their weakness | Lean's advantage |

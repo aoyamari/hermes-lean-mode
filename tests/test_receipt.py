@@ -236,3 +236,38 @@ def test_lookup_price_suffix():
     # Empty
     got3 = _lookup_price(prices, "")
     assert got3 is None
+
+
+def test_lookup_price_ambiguous_suffix():
+    """Suffix match returns None when >1 keys match (ambiguous)."""
+    from lean.receipt import _lookup_price
+
+    prices = {
+        "surplus/glm-5.3-flash": PriceEntry(input=0.0023, output=0.0066),
+        "other/glm-5.3-flash": PriceEntry(input=0.5, output=1.0),
+    }
+    # Two different prefixes with same suffix → ambiguous
+    got = _lookup_price(prices, "glm-5.3-flash")
+    assert got is None, "Should be ambiguous with >1 suffix matches"
+
+
+def test_config_output_bundle_warning():
+    """format_config_output warns when toolsets contain bundles."""
+    from lean.config import LeanConfig, PresetEntry, PriceEntry
+    from lean.receipt import format_config_output
+
+    # Config with bundle toolsets
+    cfg = LeanConfig()
+    cfg.model = "test-model"
+    cfg.toolsets = ["hermes-telegram", "lean"]
+    result = format_config_output(cfg)
+    assert "⚠ parent uses bundle" in result
+    assert "hermes-telegram" in result
+    assert "narrowing unavailable" in result
+
+    # Config WITHOUT bundles — no warning
+    cfg2 = LeanConfig()
+    cfg2.model = "test-model"
+    cfg2.toolsets = ["web", "file", "terminal"]
+    result2 = format_config_output(cfg2)
+    assert "⚠ parent uses bundle" not in result2
