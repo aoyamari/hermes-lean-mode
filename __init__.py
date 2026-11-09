@@ -537,7 +537,7 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
     receipt = format_receipt(
         cfg, run, outcome,
         parent_model=cfg.parent_model,
-        brief_used=bool(brief_text),
+        brief_was_used=bool(brief_text),
         is_escalated=outcome.get("is_escalation", False),
         escalation_cheap_cost=outcome.get("escalation_cheap_cost", 0.0),
         escalation_trigger=outcome.get("escalation_trigger"),

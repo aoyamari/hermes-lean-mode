@@ -94,6 +94,7 @@ class FakeContext:
         self._tools = {}
         self._hooks = {}
         self._data_dir = data_dir
+        self.subagent_lifecycle = _MockSubagentLifecycle()
 
     def register_command(self, name, handler, description="", args_hint=""):
         self._commands[name] = handler
@@ -305,3 +306,105 @@ def test_e2e_config_subcommand_dispatch():
         from lean.command import parse_quick
         cmd = parse_quick("config")
         assert cmd.subcommand == "config"
+
+
+class _MockSubagentLifecycle:
+    """Minimal mock for ctx.subagent_lifecycle used by quick_run tool handler."""
+
+    class _MockHandle:
+        def __init__(self):
+            self.subagent_id = "test-child-001"
+
+    class _MockWaitResult:
+        timed_out = False
+
+    class _MockResult:
+        summary = "Task completed successfully"
+        error_message = ""
+        error_classification = ""
+
+        class _TerminalState:
+            name = "SUCCEEDED"
+        terminal_state = _TerminalState()
+
+    def __init__(self):
+        self.last_launch_req = None
+        self.call_count = 0
+
+    def launch(self, req):
+        self.call_count += 1
+        self.last_launch_req = req
+        return self._MockHandle()
+
+    def wait(self, handle, timeout_seconds=30):
+        return self._MockWaitResult()
+
+    def result(self, handle):
+        return self._MockResult()
+
+    def cancel(self, handle, reason=""):
+        pass
+
+
+def test_e2e_quick_run_tool_handler():
+    """Call quick_run tool handler through the registered dispatch path.
+
+    This MUST fail with ImportError when _exclude_excluded is missing from
+    launch.py (old code). With the fix, it should reach launch() and return
+    a receipt.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        old_home = os.environ.get("HERMES_HOME")
+        try:
+            os.environ["HERMES_HOME"] = tmp
+
+            # Create plugin-data dir so AuditLog can init
+            data_dir = Path(tmp) / "plugin-data" / "lean-mode"
+            data_dir.mkdir(parents=True, exist_ok=True)
+
+            from unittest.mock import patch
+            import sys as _sys
+
+            # Mock toolsets so imports inside _run_direct_launch work
+            _toolsets_mock = type(_sys)("toolsets")
+            _toolsets_mock.validate_toolset = lambda name: True
+            _toolsets_mock.get_toolset_names = lambda: ["terminal", "web", "search", "file"]
+            _sys.modules.setdefault("toolsets", _toolsets_mock)
+
+            plugin_init = _load_plugin()
+            ctx = FakeContext(Path(tmp))
+            plugin_init.register(ctx)
+
+            # Get the registered quick_run tool handler
+            tool_entry = ctx._tools.get("quick_run")
+            assert tool_entry is not None, "quick_run tool was not registered"
+            handler = tool_entry["handler"]
+
+            # Call the handler with task + context arguments
+            args = {"task": "echo hello", "context": "Test brief for lean worker"}
+            result = handler(args, session_id="test-session")
+
+            # Must return a receipt string, not an error
+            assert result is not None, "handler returned None"
+            assert "Lean receipt" in result, (
+                f"expected receipt, got:\n{result}"
+            )
+            assert "echo hello" not in result, (
+                "receipt should not contain the task text"
+            )
+
+            # Verify subagent_lifecycle.launch was called
+            assert ctx.subagent_lifecycle.call_count >= 1, (
+                "subagent_lifecycle.launch was never called"
+            )
+
+        finally:
+            _sys.modules.pop("toolsets", None)
+            _sys.path = [p for p in _sys.path if "_lean_mode_pkg" not in str(p)]
+            for mod_name in list(_sys.modules):
+                if mod_name.startswith("lean_mode") or mod_name == "lean":
+                    _sys.modules.pop(mod_name, None)
+            if old_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = old_home
