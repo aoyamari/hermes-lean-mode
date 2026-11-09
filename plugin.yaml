@@ -1,0 +1,85 @@
+name: lean-mode
+version: 0.2.0
+description: "/quick — cheap-model subagent with a budget cap, auto-escalation and a cost receipt"
+author: Aoyama Jaeger
+license: MIT
+requires_hermes: ">=0.22.6"
+
+provides_commands:
+  - quick
+provides_hooks:
+  - post_api_request
+  - subagent_start
+  - subagent_stop
+provides_tools:
+  - quick_run
+
+config_schema:
+  model:
+    type: str
+    default: ""
+    description: "Cheap model ID for lean runs (operator must set). Fallback: delegation.model -> parent model"
+  provider:
+    type: str
+    default: ""
+    description: "Provider for the cheap model (optional, e.g. openrouter)"
+  toolsets:
+    type: list
+    default:
+      - terminal
+      - read
+      - web_search
+    description: "Allowed toolsets for the cheap subagent (validated against parent)"
+  timeout_seconds:
+    type: int
+    default: 300
+    description: "Max wall-clock seconds per lean run"
+  gateway_max_timeout_seconds:
+    type: int
+    default: 120
+    description: "Max timeout clamped for gateway sessions"
+  poll_interval_seconds:
+    type: int
+    default: 3
+    description: "Watchdog poll interval for wall-clock and budget checks"
+  budget_usd:
+    type: float
+    default: 0.0
+    description: "Default per-run budget cap in USD (0 = off)"
+  escalate:
+    type: bool
+    default: true
+    description: "Auto-escalate to parent model when cheap run fails"
+  escalate_on:
+    type: list
+    default:
+      - failed
+      - empty_result
+      - max_iterations
+      - low_confidence
+      - launch_failed
+    description: "Terminal statuses that trigger escalation"
+  min_escalation_seconds:
+    type: int
+    default: 60
+    description: "Minimum remaining wall-clock time to allow escalation"
+  max_brief_chars:
+    type: int
+    default: 6000
+    description: "Max characters for the parent-written brief"
+  max_result_chars:
+    type: int
+    default: 8000
+    description: "Max characters returned in the result"
+  prices:
+    type: dict
+    default: {}
+    description: "Price table: model -> {input, output, cache_read, cache_write} ($/1M tokens)"
+  presets:
+    type: dict
+    default: {}
+    description: "Preset shortcuts: name -> {toolsets?, model?, timeout_seconds?, budget_usd?, context_hint?}"
+  audit_retention_lines:
+    type: int
+    default: 1000
+    description: "Max lines in runs.jsonl before rotation"

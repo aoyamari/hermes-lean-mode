@@ -1,0 +1,133 @@
+"""Request building and validation for subagent launches."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+from .config import LeanConfig, LEAN_CONTEXT
+
+logger = logging.getLogger("lean-mode.launch")
+
+# Tools always excluded from cheap runs (no grandchildren, no memory, no skills)
+_ALWAYS_EXCLUDED = {"delegate_task", "memory", "clarify", "send_message", "cronjob", "skills"}
+
+
+def build_child_context(cfg: LeanConfig, brief: str = "") -> str:
+    """Build the context string for the child subagent.
+
+    Concatenates LEAN_CONTEXT with operator's brief. Truncates brief at max_brief_chars.
+    Returns the full context string and whether brief was truncated.
+    """
+    ctx = LEAN_CONTEXT
+    if brief:
+        if len(brief) > cfg.max_brief_chars:
+            brief = brief[:cfg.max_brief_chars] + "\n\n[Brief truncated at max_brief_chars]"
+        ctx += "\n\n## Brief from the main agent\n" + brief
+    return ctx
+
+
+def build_toolsets(cfg: LeanConfig, parent_toolsets: Optional[List[str]] = None) -> Tuple[List[str], Optional[str]]:
+    """Build the allowed_toolsets list, validated against parent toolsets.
+
+    Returns (toolsets, error_string). error is None when valid.
+    """
+    tools = list(cfg.toolsets)
+
+    # Validate against parent
+    if parent_toolsets:
+        unknown = [t for t in tools if t not in parent_toolsets and t not in _ALWAYS_EXCLUDED]
+        if unknown:
+            return tools, f"Unknown toolsets: {', '.join(unknown)}. Valid: {', '.join(sorted(parent_toolsets))}"
+
+    # Exclude always-excluded tools
+    tools = [t for t in tools if t not in _ALWAYS_EXCLUDED]
+
+    return tools, None
+
+
+def build_launch_request(
+    cfg: LeanConfig,
+    task: str,
+    context: str,
+    parent_session_id: Optional[str],
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    toolsets: Optional[List[str]] = None,
+    parent_session_cwd: str = "",
+) -> Dict[str, Any]:
+    """Build a SubagentLaunchRequest-compatible dict.
+
+    Returns dict ready for ctx.subagent_lifecycle.launch().
+    Note: timeout_seconds cannot be passed (rejected by API). Use watchdog instead.
+    """
+    effective_model = model or cfg.model or None  # None = use delegation default
+    effective_provider = provider or cfg.provider or None
+
+    resolved_tools = toolsets or cfg.toolsets
+    # Exclude always-blocked tools
+    resolved_tools = [t for t in resolved_tools if t not in _ALWAYS_EXCLUDED]
+
+    correlation_id = f"lean-{uuid.uuid4().hex[:12]}"
+
+    req = {
+        "goal": task,
+        "context": context,
+        "role": "leaf",
+        "allowed_toolsets": tuple(resolved_tools) if resolved_tools else None,
+        "correlation_id": correlation_id,
+        "parent_session_id": parent_session_id,
+    }
+    if effective_model:
+        req["model"] = effective_model
+    if effective_provider:
+        req["provider"] = effective_provider
+
+    return req
+
+
+def validate_toolsets_against_parent(cfg_toolsets: List[str], parent_toolsets: List[str]) -> Optional[str]:
+    """Validate configured toolsets against parent's toolsets. Returns error or None."""
+    unknown = [t for t in cfg_toolsets if t not in parent_toolsets and t not in _ALWAYS_EXCLUDED]
+    if unknown:
+        return f"Unknown toolsets in lean config: {', '.join(unknown)}. Valid: {', '.join(sorted(parent_toolsets))}"
+    return None
+
+
+def _exclude_excluded(tools: List[str]) -> List[str]:
+    """Filter out always-excluded tools from a list."""
+    return [t for t in tools if t not in _ALWAYS_EXCLUDED]
+
+
+def _do_run_inject_path(ctx, cfg, audit, task, preset, model_override,
+                         toolsets_override, timeout_override, budget_override,
+                         no_escalate, full, escalate_override) -> str:
+    """Run via inject_message — ask parent to call quick_run tool.
+
+    This is the default path for slash commands because launch() FAILS
+    from slash command handlers (see SPIKE.md).
+    """
+    msg = f"/quick: run cheap: {task}"
+    brief_parts = [f"Task: {task}"]
+    if preset:
+        brief_parts.append(f"Preset: @{preset}")
+    if model_override:
+        brief_parts.append(f"Model: {model_override}")
+    if toolsets_override:
+        brief_parts.append(f"Toolsets: {','.join(toolsets_override)}")
+    if timeout_override:
+        brief_parts.append(f"Timeout: {timeout_override}s")
+    if budget_override:
+        brief_parts.append(f"Budget: ${budget_override}")
+    if full:
+        brief_parts.append("Full: use parent model/tools")
+    brief_parts.append("")
+    brief_parts.append(
+        "Use the quick_run tool to handle this task cheaply. "
+        "Set context= to this message's /quick args."
+    )
+
+    # This relies on a parent LLM turn to call quick_run — no handle, no receipt.
+    # The /quick autoresponder is enough guidance.
+    return f"Sent to parent via inject_message. Awaiting quick_run tool call.\n\nRequest: {task}"
