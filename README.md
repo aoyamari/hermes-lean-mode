@@ -1,207 +1,197 @@
-# Lean Mode (`/quick`)
+# Lean Mode — `quick_run` for Hermes Agent
 
-**Cheap mode that can't make you lose.**
+**Cheap mode that can't make you lose: a dollar cap, auto-escalation when the cheap model fails, and an honest cost receipt.**
 
-A Hermes Agent plugin that runs tasks on a cheap model with a **budget cap**, **auto-escalation** on failure, and a **cost receipt** proving what you saved.
+## The problem
 
-## Quick Start
+Every call your main agent makes carries the whole conversation. In our live
+sessions the parent averaged **~225k prompt tokens per call** (100–300k is
+normal for a long chat). Handing a self-contained task to a subagent on that
+same model still pays parent prices for every token.
 
-```bash
-# Enable the plugin
-hermes plugins enable lean-mode
+A Lean child starts clean: just the task, a short brief and a small toolset.
+In our live tests every child's first call was **6.0–6.1k prompt tokens**, and
+short tasks stayed in the 4–10k range per call. Lean runs that child on a
+cheap model, caps what it can spend, retries on the parent model if the cheap
+one fails, and prints a receipt so you can check the saving yourself.
 
-# Configure in ~/.hermes/config.yaml:
-lean:
-  model: "google/gemini-flash-2.0"   # ← MUST set to a real model on your provider
-  provider: "openrouter"
-  toolsets: [terminal, read, web_search]
-  prices:
-    google/gemini-flash-2.0:
-      input: 0.10
-      output: 0.50
-```
+## Use it
 
-Then in a Hermes session:
-```
-/quick research the latest AI papers on agentic systems
-/quick --budget 0.02 research the latest AI papers
-/quick stats
-/quick --full deploy the app
-```
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Budget cap** (`--budget N`) | Per-run dollar limit; watchdog polls every 3s and cancels when crossed |
-| **Auto-escalation** | If the cheap model fails / returns low confidence, runs once on the parent model |
-| **Cost receipt** | Tokens, $ estimate, vs-non-Lean comparison line |
-| **`/quick stats`** | Cumulative savings report from the audit log |
-| **Skill suppression** | Cheap worker has no skill index — can't use `skill_view`/`skill_manage` |
-| **Narrow toolsets** | Only `terminal`, `read`, `web_search` by default (operator-configurable) |
-| **`--full`** | Escape hatch: run with parent model + full tools (Lean off) |
-| **`--raw`** | Direct launch without parent brief (for self-contained tasks) |
-| **`@preset`** | Shortcuts: `@research`, `@code` |
-
-## Commands
+Ask the agent in plain language. The agent calls the `quick_run` tool:
 
 ```
-/quick [@preset] [flags] <task>
-/quick stats [--days N]
+use quick_run preset research for: find the 3 most popular Hermes plugins and summarize them
+use quick_run preset code with budget_usd 0.01 for: write a regex that matches ISO dates
 ```
 
-Flags:
-- `--model M` — Override cheap model
-- `--tools a,b,c` — Override toolsets
-- `--timeout S` — Override timeout (default 300s)
-- `--budget N` — Dollar budget cap
-- `--no-escalate` — Disable auto-escalation
-- `--full` — Use parent model + full tools
-- `--raw` — Direct launch (no parent brief)
+`quick_run` arguments: `task` (required), `context` (brief from the main agent),
+`preset`, `model`, `toolsets`, `timeout_seconds`, `budget_usd`, `escalate`.
 
-## Configuration
+The `/quick` command does not start runs (see Known limitations). It has two
+subcommands:
 
-Place under `lean:` in `~/.hermes/config.yaml`:
+```
+/quick stats [--days N]   # spend, vs-non-Lean, net saved, escalations
+/quick config             # effective config, prices, presets, bundle warnings
+/quick <task>             # replies with the sentence to send the agent instead
+```
+
+## Config
+
+Put this under `lean:` in `~/.hermes/config.yaml`. This is the config the live
+tests ran with; the two `context_hint`s are translated from Indonesian. Prices
+are $ per 1M tokens, set them to your provider's real rates:
 
 ```yaml
 lean:
-  model: ""                      # Cheap model ID (operator MUST set)
-  provider: "openrouter"         # Optional provider
-  toolsets: [terminal, read, web_search]
+  model: surplus/glm-5.3-flash        # cheap model for the child
+  parent_model: combo                 # your main model: used for escalation and the vs-non-Lean line
+  toolsets: [web, file]               # default child toolsets (never delegate/memory/skills/clarify/send_message/cronjob)
   timeout_seconds: 300
-  gateway_max_timeout_seconds: 120
-  poll_interval_seconds: 3
-  budget_usd: 0.0                # 0 = off
+  gateway_max_timeout_seconds: 120    # Telegram/Discord/WhatsApp/gateway sessions are clamped to this
   escalate: true
   escalate_on: [failed, empty_result, max_iterations, low_confidence, launch_failed]
-  min_escalation_seconds: 60
-  max_brief_chars: 6000
-  max_result_chars: 8000
+  min_escalation_seconds: 60          # skip escalation if less time than this is left
+  budget_usd: 0                       # default per-run cap, 0 = off
   prices:
-    google/gemini-flash-2.0:
-      input: 0.10
-      output: 0.50
-      cache_read: 0.05
-      cache_write: 0.10
+    surplus/glm-5.3-flash:
+      input: 0.0023
+      output: 0.0066
+      cache_read: 0.0023
+      cache_write: 0.0023
+    combo:
+      input: 0.0091
+      output: 0.018
+      cache_read: 0.0091
+      cache_write: 0.0091
   presets:
     research:
-      toolsets: [terminal, read, web_search]
-      context_hint: "Be thorough with web research."
+      toolsets: [web, file]
     code:
-      toolsets: [terminal, read, write]
-      timeout_seconds: 600
-  audit_retention_lines: 1000
+      toolsets: [file, terminal, code_execution]
+    hard:
+      context_hint: >-
+        If you cannot verify your answer with sources or exact steps, or the
+        problem is unsolved, end with LEAN_CONFIDENCE: low. Never claim to have
+        proved something that is unproven.
+    force_escalate:                   # test preset: always escalates
+      context_hint: "This is an escalation test. Answer briefly, then end with exactly: LEAN_CONFIDENCE: low"
 ```
 
-Model fallback chain: `lean.model` → `delegation.model` → parent model.
+Then `hermes plugins enable lean-mode`, add `lean` to your platform toolsets,
+and restart the gateway.
 
-## Receipt Format
+## Features
+
+- **Dollar cap (soft).** `budget_usd` per run. The watchdog checks spend
+  between API calls and cancels as soon as the cap is crossed, so a run stops
+  within one call. The call already in flight can overshoot. Setting a budget
+  without a price entry for the cheap model is refused.
+- **Auto-escalation.** If the cheap child fails, returns empty, hits max
+  iterations or ends with `LEAN_CONFIDENCE: low`, Lean reruns the task once on
+  `parent_model` with the parent's toolsets. The escalation only gets the time
+  left before the original deadline. Escalation is never triggered by a budget
+  or timeout stop.
+- **Watchdog.** Wall-clock limit per run (`timeout_seconds`, clamped to
+  `gateway_max_timeout_seconds` on messaging gateways). On timeout the child
+  is cancelled and you get its partial result.
+- **Restricted child.** The child only gets the configured toolsets. No
+  delegation, memory, clarify, send_message or cronjob, and no skills.
+- **Receipt.** Model, calls, tool calls, duration, tokens in/out/cache, cost
+  and a "vs non-Lean" line that reprices the same tokens at `parent_model`
+  rates. Escalated runs show both costs and a negative saving.
+- **Audit + stats.** One JSON line per run in `plugin-data/lean-mode/runs.jsonl`
+  with per-call token buckets. `/quick stats` totals spend, the non-Lean
+  comparison and net saved over all priced runs (escalations count as
+  losses). Older entries without a stored comparison are repriced from their
+  tokens. Unreadable entries are counted as skipped, not dropped silently.
+
+## Live test results
+
+Real runs on Hermes v0.23.0 over Telegram, cheap model `surplus/glm-5.3-flash`,
+parent `combo`. All numbers come from `runs.dev.jsonl` (development log) and
+`runs.jsonl` (clean log after the final fixes). Costs use the prices above.
+
+| Test | Run id | Result | Calls | Prompt tokens (in + cache) | Cost |
+|------|--------|--------|-------|----------------------------|------|
+| Research run, narrowed toolsets (no "inherited from parent") | `lean-6793e5064240` | succeeded, 45 s | 3 | 22,774 + 8,960 | $0.0000843 |
+| Budget cap $0.00002, escalate off | `lean-98a8f44d042b` | cancelled_by_budget after 2 calls, 17 s, no escalation | 2 | 11,877 + 4,032 | $0.0000389 (in-flight overshoot) |
+| Escalation (`force_escalate`) | `lean-a55c75094200` | escalated_low_confidence → combo answered | 1 cheap + 1 combo | 6,068 cheap / 9,802 + 768 combo | cheap $0.0000147 (wasted) + combo $0.0000991 = $0.000114 |
+| Watchdog, timeout 60 s, escalate off | `lean-c5cca1da6f96` | cancelled_by_watchdog at 61 s, partial result returned | 7 | 92,461 + 49,152 | $0.000333 |
+| Child asked to call `skill_view` / `skills_list` | `lean-ca498161cbfa` | child reported both tools unavailable; its toolset was patch, read_file, search_files, web_extract, web_search, write_file | 1 | 6,024 + 0 | $0.0000172 |
+| `/quick stats` vs hand count of `runs.jsonl` | 4 runs | match: 1 ok · 1 escalated · 2 timeout, spent $0.000564 | – | – | – |
+
+Output of `/quick stats` on the clean log:
 
 ```
-⚡ Lean receipt — model google/gemini-flash-2.0 · 3 calls · 2 turns · 5 tool calls · 12s
-tokens in/out/cache: 1240 / 380 / 200 · est. cost $0.0004
-vs non-Lean (same work on parent): $0.012 (estimate) — saved ~97%
-run id lean-a1b2c3d4e5f6 · audit: plugin-data/lean-mode/runs.jsonl
-excludes the main agent's brief-writing turn
+📊 Lean Stats — last 7 days
+  4 runs · 1 ok · 1 escalated · 0 budget-stop · 2 timeout
+  spent: $0.000564 (estimate) · vs non-Lean $0.00202 · net saved $0.00145 (72%)
+  escalated: 1 runs (−$0.0000147 wasted)
+  top preset: @research
 ```
 
-Escalated receipt:
-```
-⚡ Lean receipt — ESCALATED (low_confidence) · cheap $0.001 (wasted) + full $0.03 = total $0.031
-saved: −$0.001 vs running on parent-model directly
-run id lean-a1b2c3d4e5f6-esc · audit: plugin-data/lean-mode/runs.jsonl
-```
+Across all 58 child calls in both logs the first call was always 6.0–6.1k
+prompt tokens. The median was 16.8k: long research runs grow as tool results
+pile up, but they never got near the parent's ~225k per call.
 
-## No Model? No Problem
+## Known limitations
 
-If `lean.model` is unset, Lean still works: the child runs on the parent model but with narrow toolsets, no skills, a watchdog, and a receipt. The receipt says "savings unavailable."
+- **Bundle toolsets block narrowing.** Hermes checks a child's
+  `allowed_toolsets` against the literal names in the parent's toolsets and
+  does not look inside bundles such as `hermes-telegram`. With a bundle the
+  child launch is refused ("would broaden parent permissions") and Lean falls
+  back to inheriting all parent tools; the receipt then says
+  `toolsets: inherited from parent (narrowing rejected) · skills: ON`. Fix it
+  by listing granular toolsets for the platform:
 
-## How It Works
+  ```yaml
+  platform_toolsets:
+    telegram: [web, terminal, file, vision, image_gen, skills, browser, tts, todo,
+               memory, session_search, clarify, code_execution, delegation, cronjob,
+               computer_use, connections, kanban, lean]
+  ```
 
-1. **`/quick <task>`** injects a message into the session asking the parent to write a brief and call `quick_run`
-2. **Parent writes a brief** with conversation context and calls `quick_run(task, context=...)`
-3. **Cheap subagent launches** with narrow toolsets (no skills, no delegation)
-4. **Watchdog polls** every 3s checking wall-clock remaining and budget spent
-5. If the cheap run fails → **auto-escalates** to parent model once (remaining time + budget)
-6. **Receipt** shows: tokens, $ estimate, vs-non-Lean, budget
-7. **Audit log** (`runs.jsonl`) records every run
+  `/quick config` warns when it sees a bundle.
+- **`/quick <task>` cannot start a run.** A slash-command handler cannot
+  launch a subagent, and `inject_message` did not start an agent turn in our
+  tests. The command replies with the exact sentence to send the agent instead.
+- **Escalation trusts the child's own confidence.** `low_confidence` relies
+  on the cheap model ending with `LEAN_CONFIDENCE: low`. With the `hard`
+  preset, the same unprovable task (prove the twin prime conjecture) once
+  escalated (`lean-dd59300c0885`) and once came back confident
+  (`lean-18e37aa6eebd`, which correctly said no proof exists). A cheap model
+  can be wrong and still say it is sure; Lean cannot catch that.
+- **Dashboards can differ from the receipt.** Lean counts the token buckets
+  Hermes reports per call. A caching proxy in front of the provider can bill
+  fewer input tokens than the provider reports; we saw a fixed 2,000-token
+  gap per call on one router. The receipt is an estimate from your price
+  table, not an invoice.
+
+## Disclosure
+
+- No network calls of its own. All model and tool traffic goes through the
+  Hermes subagent the plugin launches (`ctx.subagent_lifecycle`), on the
+  models and toolsets you configure.
+- Reads only your Hermes config (the `lean:` section, plus
+  `custom_providers` to guess `parent_model` when it is unset) and the token
+  buckets Hermes passes to its `post_api_request` / `subagent_start` /
+  `subagent_stop` hooks. No direct reads of `state.db`.
+- Writes only to `plugin-data/lean-mode/` (`runs.jsonl`, rotated at
+  `audit_retention_lines`). Entries hold model names, token counts, costs,
+  statuses and session ids, never the task text or the result.
+- Reads no credentials, `.env`, `auth.json` or other credential stores.
+- No telemetry and no usage reporting.
+- It uses `toolsets.get_toolset_names` / `validate_toolset` from Hermes core
+  to validate toolset names. `hermes plugins validate` flags these as private
+  core imports.
 
 ## Development
 
 ```bash
-# Run unit tests
 cd ~/.hermes/plugins/lean-mode
-python -m pytest tests/ -v
-
-# Validate plugin
-hermes plugins validate . --install-deps
-
-# Live test
-hermes -c "/quick --raw echo hello world"
+python -m pytest tests/ -q
+hermes plugins validate ~/.hermes/plugins/lean-mode --install-deps
 ```
 
-## Known Hermes Limitation: Bundle Toolsets & Child Narrowing
-
-When a platform parent uses **bundle toolsets** (names starting with `hermes-`, e.g. `hermes-telegram`), the Hermes subagent framework checks child `allowed_toolsets` against **literal toolset names** in the parent's `enabled_toolsets`. It does **NOT** look inside bundles to see what tools they contain.
-
-**Consequence:** If the parent has `enabled_toolsets = ["hermes-telegram", "lean"]` and Lean tries to narrow the child to `["web", "search", "file"]`, the child launch fails with `"Requested toolsets would broaden parent permissions"` — even though `hermes-telegram` internally contains `web_search`, `web_extract`, `read_file`, `write_file`, etc.
-
-**Workaround:** Replace the bundle with its granular equivalent in `config.yaml`:
-
-```yaml
-# Instead of:
-platform_toolsets:
-  telegram:
-    - hermes-telegram
-    - lean
-
-# Use:
-platform_toolsets:
-  telegram:
-    - web
-    - terminal
-    - file
-    - vision
-    - image_gen
-    - skills
-    - browser
-    - tts
-    - todo
-    - memory
-    - session_search
-    - clarify
-    - code_execution
-    - delegation
-    - cronjob
-    - computer_use
-    - connections
-    - kanban
-    - lean
-```
-
-Granular toolsets that cover the same tools as the `hermes-telegram` bundle (which is exactly `_HERMES_CORE_TOOLS` — no Telegram-specific extras). With granular toolsets, Lean can narrow the child to e.g. `["web", "terminal", "file"]` and the framework correctly validates each toolset name.
-
-If you can't switch to granular toolsets, Lean falls back to `allowed_toolsets=None` (inherit all parent tools). The receipt will show:
-```
-toolsets: inherited from parent (narrowing rejected) · skills: ON
-```
-And the audit log will contain `"toolsets_inherited": true`.
-
-For `/quick config`, a warning is shown when the parent uses bundles.
-
-## Competitor Comparison
-
-| Rival | Their weakness | Lean's advantage |
-|-------|---------------|------------------|
-| `smart_model_routing` | Length-based guess, no receipt | Task-level with brief, budget + receipt |
-| External routers (NadirClaw, Spark) | Separate proxy, brittle rules | Pure Hermes plugin, no extra infra |
-| `hermes-teammates` | Costs rise 26-44% | One-shot, receipt proves saving |
-| `advanced-delegation` | Routing only, no guardrails | Budget cap, escalation, watchdog |
-
-## Demo (90 seconds)
-
-1. `/quick @research summarize sessions` → receipt shows saving
-2. `/quick --budget 0.001 <hard task>` → stopped by budget cap
-3. `/quick <task that fails>` → auto-escalates → ESCALATED receipt
-4. `/quick stats` → cumulative savings
-5. "Cheap mode that can't make you lose."
+MIT licensed. See [LICENSE](LICENSE).

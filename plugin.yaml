@@ -1,9 +1,9 @@
 name: lean-mode
-version: 0.2.0
-description: "/quick — cheap-model subagent with a budget cap, auto-escalation and a cost receipt"
-author: Aoyama Jaeger
+version: 0.1.0
+description: "Cheap-model subagent (quick_run) with a dollar cap, auto-escalation and an honest cost receipt"
+author: Aoyama
 license: MIT
-requires_hermes: ">=0.22.6"
+requires_hermes: ">=0.23.0"
 
 provides_commands:
   - quick
@@ -18,7 +18,11 @@ config_schema:
   model:
     type: str
     default: ""
-    description: "Cheap model ID for lean runs (operator must set). Fallback: delegation.model -> parent model"
+    description: "Cheap model ID for lean runs (operator must set). Empty = Hermes delegation default"
+  parent_model:
+    type: str
+    default: ""
+    description: "Main agent model ID, used for escalation and the vs-non-Lean price line. Empty = first custom_providers model in config.yaml"
   provider:
     type: str
     default: ""
@@ -26,9 +30,9 @@ config_schema:
   toolsets:
     type: list
     default:
-      - terminal
-      - read
-      - web_search
+      - web
+      - search
+      - file
     description: "Allowed toolsets for the cheap subagent (validated against parent)"
   timeout_seconds:
     type: int
@@ -39,8 +43,8 @@ config_schema:
     default: 120
     description: "Max timeout clamped for gateway sessions"
   poll_interval_seconds:
-    type: int
-    default: 3
+    type: float
+    default: 3.0
     description: "Watchdog poll interval for wall-clock and budget checks"
   budget_usd:
     type: float

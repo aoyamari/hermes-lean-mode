@@ -184,8 +184,8 @@ def test_e2e_quick_stats_via_lazy_audit():
                 os.environ["HERMES_HOME"] = old_home
 
 
-def test_e2e_quick_task_via_inject_message():
-    """register() → dispatch '@research tes' through registered handler."""
+def test_e2e_quick_task_returns_quick_run_hint():
+    """'/quick @research tes' does NOT launch or inject; it returns the exact hint."""
     with tempfile.TemporaryDirectory() as tmp:
         old_home = os.environ.get("HERMES_HOME")
         try:
@@ -194,13 +194,26 @@ def test_e2e_quick_task_via_inject_message():
             ctx = FakeContext(Path(tmp))
             plugin_init.register(ctx)
 
+            launch_calls = []
+            ctx.subagent_lifecycle.launch = lambda req: launch_calls.append(req)
+
             handler = ctx._commands.get("quick")
             assert handler is not None
 
             result = handler("@research tes")
-            assert result is not None
-            assert "Sent to parent" in result
-            assert "tes" in result
+            assert result == "Minta agent: 'pakai quick_run preset research untuk: tes'", result
+            assert "inject" not in result.lower()
+
+            # No preset given -> default hint uses research
+            result2 = handler("cari harga emas hari ini")
+            assert result2 == "Minta agent: 'pakai quick_run preset research untuk: cari harga emas hari ini'", result2
+
+            # Other preset is kept
+            result3 = handler("@code fix bug")
+            assert result3 == "Minta agent: 'pakai quick_run preset code untuk: fix bug'", result3
+
+            # Nothing was launched
+            assert launch_calls == [], "/quick <task> must not launch a subagent"
         finally:
             sys.path = [p for p in sys.path if "_lean_mode_pkg" not in str(p)]
             for mod_name in list(sys.modules):

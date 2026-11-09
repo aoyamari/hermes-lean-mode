@@ -109,36 +109,3 @@ def validate_toolsets_against_parent(cfg_toolsets: List[str], parent_toolsets: L
 def _exclude_excluded(tools: List[str]) -> List[str]:
     """Filter out always-excluded tools from a list."""
     return [t for t in tools if t not in _ALWAYS_EXCLUDED]
-
-
-def _do_run_inject_path(ctx, cfg, audit, task, preset, model_override,
-                         toolsets_override, timeout_override, budget_override,
-                         no_escalate, full, escalate_override) -> str:
-    """Run via inject_message — ask parent to call quick_run tool.
-
-    This is the default path for slash commands because launch() FAILS
-    from slash command handlers (see SPIKE.md).
-    """
-    msg = f"/quick: run cheap: {task}"
-    brief_parts = [f"Task: {task}"]
-    if preset:
-        brief_parts.append(f"Preset: @{preset}")
-    if model_override:
-        brief_parts.append(f"Model: {model_override}")
-    if toolsets_override:
-        brief_parts.append(f"Toolsets: {','.join(toolsets_override)}")
-    if timeout_override:
-        brief_parts.append(f"Timeout: {timeout_override}s")
-    if budget_override:
-        brief_parts.append(f"Budget: ${budget_override}")
-    if full:
-        brief_parts.append("Full: use parent model/tools")
-    brief_parts.append("")
-    brief_parts.append(
-        "Use the quick_run tool to handle this task cheaply. "
-        "Set context= to this message's /quick args."
-    )
-
-    # This relies on a parent LLM turn to call quick_run — no handle, no receipt.
-    # The /quick autoresponder is enough guidance.
-    return f"Sent to parent via inject_message. Awaiting quick_run tool call.\n\nRequest: {task}"

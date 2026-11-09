@@ -1,8 +1,7 @@
 """Lean Mode — cheap-model subagent with budget cap, auto-escalation, and cost receipt.
 
 Plugin for Hermes Agent. Registers:
-- `/quick` command (inject path — see SPIKE.md)
-- `/quick stats`: cumulative savings report
+- `/quick` command: `stats`, `config`, or a hint telling the user to ask the agent for quick_run
 - `quick_run` tool: engine for the cheap subagent
 - `post_api_request` hook: track token usage for receipt
 - `subagent_start` / `subagent_stop` hooks: map child sessions
@@ -291,14 +290,13 @@ def _handle_quick_run(ctx, cfg: Any, audit: Any, **kw) -> str:
         timeout_override=timeout_override,
         budget_override=budget_override,
         escalate_override=escalate,
-        inject_path=False,  # tool call uses direct launch
     )
 
 
 # ── /quick command handler ──────────────────────────────────────────
 
 def _handle_quick_command(ctx, cfg: Any, audit: Any, raw_args: str) -> str:
-    """Handle the /quick slash command. Default path: inject_message."""
+    """Handle the /quick slash command: stats, config, or a quick_run hint."""
     from .lean.command import parse_quick
     from .lean.presets import preset_names
     from .lean.stats import compute_stats
@@ -324,17 +322,18 @@ def _handle_quick_command(ctx, cfg: Any, audit: Any, raw_args: str) -> str:
                 f"Flags: --model M, --tools a,b,c, --timeout S, --budget N, --no-escalate, --full\n"
                 f"Presets: {presets_hint}")
 
-    return _run_lean(
-        ctx, cfg, audit, cmd.task,
-        preset=cmd.preset,
-        model_override=cmd.model,
-        toolsets_override=cmd.toolsets,
-        timeout_override=cmd.timeout_seconds,
-        budget_override=cmd.budget_usd,
-        no_escalate=cmd.no_escalate,
-        full=cmd.full,
-        inject_path=True,  # slash command -> inject_message (SPIKE finding: launch fails from slash)
-    )
+    return quick_task_hint(cmd.task, cmd.preset)
+
+
+def quick_task_hint(task: str, preset: Optional[str] = None) -> str:
+    """Reply for `/quick <task>`.
+
+    A slash-command handler cannot launch a subagent, and inject_message did
+    not reliably start an agent turn in live tests. So the command does not
+    run anything; it tells the user the exact sentence to send the agent.
+    """
+    preset_name = preset or "research"
+    return f"Minta agent: 'pakai quick_run preset {preset_name} untuk: {task}'"
 
 
 # ── Core execution ──────────────────────────────────────────────────
@@ -350,38 +349,16 @@ def _run_lean(
     no_escalate: bool = False,
     full: bool = False,
     escalate_override: Optional[bool] = None,
-    inject_path: bool = True,
 ) -> str:
-    """Core lean execution: inject path or direct launch.
+    """Core lean execution: launch the cheap subagent directly.
 
-    inject_path=True (from slash command): injects a message asking the parent
-    to call quick_run. This is the default because launch() FAILS from slash
-    command handlers (see SPIKE.md).
-
-    inject_path=False (from quick_run tool): launches subagent directly.
+    Only the quick_run tool reaches this. The /quick command never launches
+    (a slash-command handler cannot start a subagent; see SPIKE.md).
     """
-
-    # ── Inject path (default for slash commands — launch() is unavailable) ─
-    if inject_path:
-        return _run_inject_path(ctx, cfg, audit, task, preset, model_override,
-                                 toolsets_override, timeout_override, budget_override,
-                                 no_escalate, full, escalate_override)
-
-    # ── Direct launch path (for quick_run tool call) ────────────────────
     return _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                                model_override, toolsets_override,
                                timeout_override, budget_override,
                                no_escalate, full, escalate_override)
-
-
-def _run_inject_path(ctx, cfg, audit, task, preset, model_override,
-                      toolsets_override, timeout_override, budget_override,
-                      no_escalate, full, escalate_override) -> str:
-    """Run via inject_message. Import-heavy modules loaded lazily."""
-    from .lean.launch import _do_run_inject_path as rip
-    return rip(ctx, cfg, audit, task, preset, model_override,
-               toolsets_override, timeout_override, budget_override,
-               no_escalate, full, escalate_override)
 
 
 def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
@@ -572,6 +549,9 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
             if esc_result:
                 escalation_run_state = esc_result.get("escalation_run_state")
                 outcome = esc_result
+                # Duration/ended_at cover the WHOLE run (cheap + escalation)
+                outcome["duration"] = time.monotonic() - started_at
+                outcome["ended_at"] = time.time()
                 status = outcome.get("status", "failed")
                 is_escalated = True
 
