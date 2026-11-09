@@ -32,7 +32,7 @@ def test_receipt_format():
     assert "⚡ Lean receipt" in receipt
     assert "deepseek-r1" in receipt
     assert "3 calls" in receipt
-    assert "est. cost $0.0002" in receipt
+    assert "est. cost $0.00019" in receipt
 
 
 def test_receipt_missing_buckets():
@@ -52,7 +52,7 @@ def test_receipt_missing_buckets():
     }
 
     receipt = format_receipt(cfg, run, outcome)
-    assert "est. cost $0.0000" in receipt
+    assert "est. cost $0.00" in receipt
 
 
 def test_receipt_budget_line():
@@ -78,7 +78,7 @@ def test_receipt_budget_line():
 
     receipt = format_receipt(cfg, run, outcome)
     assert "budget $0.02" in receipt
-    assert "spent $0.0210" in receipt
+    assert "spent $0.02" in receipt
 
 
 def test_receipt_escalated():
@@ -112,7 +112,7 @@ def test_receipt_escalated():
     assert "wasted" in receipt
     assert "full-model" in receipt, f"Escalation model should appear:\n{receipt}"
     assert "cheap-model" in receipt, f"Cheap model should appear:\n{receipt}"
-    assert "$0.001000" in receipt, ".6f format for small costs"
+    assert "$0.00100" in receipt, "2 sig figs format for small costs"
 
 
 def test_receipt_comparison():

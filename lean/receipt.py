@@ -11,6 +11,25 @@ from .watchdog import RunState
 logger = logging.getLogger("lean-mode.receipt")
 
 
+def _format_cost(amount: float) -> str:
+    """Format cost with 2 significant figures — keeps tiny values readable."""
+    if amount <= 0:
+        return "0.00"
+    if amount >= 1:
+        return f"{amount:.2f}"
+    # For sub-dollar amounts: find first two non-zero digits
+    import math
+    if amount >= 0.01:
+        return f"{amount:.4f}"
+    # Very small: compute sig figs manually
+    # Number of leading zeros after decimal point
+    if amount == 0:
+        return "0.00"
+    leading_zeros = abs(math.floor(math.log10(abs(amount))))
+    digits = leading_zeros + 2  # 2 sig figs
+    return f"{amount:.{digits}f}"
+
+
 def format_receipt(
     cfg: LeanConfig,
     run: RunState,
@@ -56,10 +75,10 @@ def format_receipt(
 
         lines.append(
             f"⚡ Lean receipt — ESCALATED ({escalation_trigger or 'unknown'}) "
-            f"· cheap {cheap_model_name} ${cheap_cost:.6f} (wasted) "
-            f"+ full {full_model_name} ${total_cost:.6f} = total ${grand_total:.6f}"
+            f"· cheap {cheap_model_name} ${_format_cost(cheap_cost)} (wasted) "
+            f"+ full {full_model_name} ${_format_cost(total_cost)} = total ${_format_cost(grand_total)}"
         )
-        lines.append(f"saved: −${cheap_cost:.6f} vs running on {full_model_name} directly")
+        lines.append(f"saved: −${_format_cost(cheap_cost)} vs running on {full_model_name} directly")
     else:
         tokens_in = run.tokens_input
         tokens_out = run.tokens_output
@@ -80,7 +99,7 @@ def format_receipt(
         )
         lines.append(
             f"tokens in/out/cache: {tokens_in} / {tokens_out} / {tokens_cache} · "
-            f"est. cost ${spent:.4f}"
+            f"est. cost ${_format_cost(spent)}"
         )
 
         # Comparison line
@@ -96,7 +115,7 @@ def format_receipt(
         if budget and budget > 0:
             actual_spent = outcome.get("budget_spent", spent)
             budget_limit = outcome.get("budget_limit", budget)
-            lines.append(f"budget ${budget_limit} · spent ${actual_spent:.4f}")
+            lines.append(f"budget ${budget_limit} · spent ${_format_cost(actual_spent)}")
 
     # Footer
     lines.append(f"run id {run.correlation_id} · audit: plugin-data/lean-mode/runs.jsonl")
@@ -138,7 +157,7 @@ def _comparison_line(cfg: LeanConfig, run: RunState, parent_model: Optional[str]
     saved = parent_cost - cheap_cost
     saved_pct = (saved / parent_cost) * 100 if parent_cost > 0 else 0.0
 
-    return f"vs non-Lean (same work on {parent_model}): ${parent_cost:.4f} (estimate) — saved ~{saved_pct:.0f}%"
+    return f"vs non-Lean (same work on {parent_model}): ${_format_cost(parent_cost)} (estimate) — saved ~{saved_pct:.0f}%"
 
 
 def _lookup_price(prices: Dict[str, PriceEntry], model_key: str) -> Optional[PriceEntry]:
@@ -182,12 +201,12 @@ def format_stats_output(
     total_spent = stats.get("total_spent", 0.0)
     total_saved = stats.get("total_saved", 0.0)
     label = "estimate" if stats.get("is_estimate", True) else "actual"
-    lines.append(f"  spent: ${total_spent:.4f} ({label})")
+    lines.append(f"  spent: ${_format_cost(total_spent)} ({label})")
 
     if total_saved >= 0:
-        lines.append(f"  net saved: ${total_saved:.4f} ({label})")
+        lines.append(f"  net saved: ${_format_cost(total_saved)} ({label})")
     else:
-        lines.append(f"  net LOSS: ${abs(total_saved):.4f} ({label}) — escalated runs affected savings")
+        lines.append(f"  net LOSS: ${_format_cost(abs(total_saved))} ({label}) — escalated runs affected savings")
 
     unknown = stats.get("unknown_cost_runs", 0)
     if unknown:
