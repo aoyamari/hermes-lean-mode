@@ -88,7 +88,9 @@ class RunState:
         total += self.tokens_output * (price.output / 1_000_000)
         total += self.tokens_cache_read * (price.cache_read / 1_000_000)
         total += self.tokens_cache_write * (price.cache_write / 1_000_000)
-        total += self.tokens_reasoning * (price.output / 1_000_000)  # reasoning billed as output
+        # NOTE: reasoning_tokens are already INCLUDED in output_tokens
+        # (completion_tokens = total output including reasoning).
+        # Do NOT add them separately — that double-counts.
         return total
 
 

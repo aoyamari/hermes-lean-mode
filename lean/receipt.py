@@ -147,7 +147,7 @@ def _comparison_line(cfg: LeanConfig, run: RunState, parent_model: Optional[str]
         + run.tokens_output * (parent_price.output / 1_000_000)
         + run.tokens_cache_read * (parent_price.cache_read / 1_000_000)
         + run.tokens_cache_write * (parent_price.cache_write / 1_000_000)
-        + run.tokens_reasoning * (parent_price.output / 1_000_000)
+        # NOTE: reasoning_tokens are already in output_tokens — no double-count
     )
 
     cheap_cost = run.spent_usd(cfg.prices, cheap_model_key)

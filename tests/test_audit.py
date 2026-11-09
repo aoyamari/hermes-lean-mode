@@ -107,7 +107,7 @@ def test_audit_includes_api_calls_detail():
 
 
 def test_audit_escalated_entry():
-    """Escalated runs have escalation info in audit."""
+    """Escalated runs have escalated_ prefix + total cost = cheap + escalation."""
     with tempfile.TemporaryDirectory() as tmp:
         audit = AuditLog(Path(tmp))
         run = RunState("test-esc", 1000.0)
@@ -129,6 +129,16 @@ def test_audit_escalated_entry():
 
         entries = audit.read_all()
         assert len(entries) == 1
+        # Top-level status = escalated_<cheap_status>
+        assert entries[0]["status"] == "escalated_succeeded", (
+            f"Expected escalated_succeeded (final outcome), got {entries[0]['status']}"
+        )
+        # Top-level cost = cheap + escalation
+        assert entries[0]["cost_usd_estimate"] == 0.031, (
+            f"Expected 0.031 (0.001 + 0.03), got {entries[0]['cost_usd_estimate']}"
+        )
         assert "escalated" in entries[0]
+        # escalated.status = original cheap status (low_confidence)
+        assert entries[0]["escalated"]["status"] == "succeeded"
         assert entries[0]["escalated"]["trigger"] == "low_confidence"
         assert entries[0]["escalated"]["cheap_cost_usd"] == 0.001

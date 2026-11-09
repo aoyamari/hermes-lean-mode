@@ -11,7 +11,13 @@ logger = logging.getLogger("lean-mode.stats")
 
 
 def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
-    """Aggregate stats from audit log. Returns dict with summary fields."""
+    """Aggregate stats from audit log. Returns dict with summary fields.
+
+    ``cost_usd_estimate`` at the top level = total (cheap + escalation).
+    Escalated runs have status ``escalated_<cheap_status>``; they count
+    as escalated but NOT as succeeded. ``total_saved`` is negative when
+    escalation wasted cheap-model spend.
+    """
     entries = audit.read_recent(days=days)
 
     total = len(entries)
@@ -44,6 +50,7 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         status = entry.get("status", "")
         escalated_info = entry.get("escalated")
 
+        # escalated_* entries are escalated, not succeeded
         if status == "succeeded":
             succeeded += 1
         if escalated_info:
@@ -53,20 +60,20 @@ def compute_stats(audit: AuditLog, days: int = 7) -> Dict[str, Any]:
         if status == "cancelled_by_watchdog":
             cancelled_watchdog += 1
 
+        # Total spent already includes cheap + escalation for escalated runs
         cost = entry.get("cost_usd_actual") or entry.get("cost_usd_estimate")
         if cost is None or cost == 0:
             unknown_cost_runs += 1
         else:
             total_spent += cost
 
-        # Savings: for escalated runs, saving is negative (waste)
+        # Savings: escalated runs wasted the cheap-model spend
         if escalated_info:
             cheap_cost = escalated_info.get("cheap_cost_usd", 0)
             total_saved -= cheap_cost
         else:
             # Non-escalated: estimate saved vs parent
             # We don't have parent cost in audit entry directly
-            # Approximate: for v0.2, we just track the spent
             pass
 
         preset = entry.get("preset")

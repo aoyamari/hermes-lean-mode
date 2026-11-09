@@ -98,17 +98,34 @@ def build_audit_entry(
     result_hash: Optional[str] = None,
     toolsets_inherited: bool = False,
 ) -> Dict[str, Any]:
-    """Build a JSON-serializable audit entry."""
+    """Build a JSON-serializable audit entry.
+
+    For escalated runs, top-level ``status`` is prefixed with ``escated_``
+    (e.g. ``escalated_succeeded``, ``escalated_failed``) and
+    ``cost_usd_estimate`` = cheap + escalation cost. The original cheap
+    attempt's status is recorded in ``escalated.status``.
+    """
     now = outcome.get("ended_at", 0) or 0
+    is_esc = outcome.get("is_escalation", False) or (cheap_outcome is not None)
+
     # Merge escalation tokens into top-level aggregates
     esc_input = outcome.get("escalation_tokens_input", 0) or 0
     esc_output = outcome.get("escalation_tokens_output", 0) or 0
     esc_cr = outcome.get("escalation_cache_read", 0) or 0
     esc_cw = outcome.get("escalation_cache_write", 0) or 0
+
+    # Total cost = cheap (if any) + escalation
+    cheap_cost = (cheap_outcome or {}).get("spent", 0.0) or 0.0
+    esc_cost = outcome.get("spent", 0.0) or 0.0
+    total_cost = cheap_cost + esc_cost if is_esc else esc_cost
+
+    # Status reflects final outcome; for escalated runs, prefix
+    display_status = f"escalated_{status}" if is_esc else status
+
     entry = {
         "ts": now,
         "correlation_id": correlation_id,
-        "status": status,
+        "status": display_status,
         "model": run_state.response_model or run_state.model or "",
         "provider": run_state.provider or "",
         "toolsets": list(run_state.__dict__.get("_toolsets", [])),
@@ -119,7 +136,7 @@ def build_audit_entry(
             "cache_read": (run_state.tokens_cache_read or 0) + esc_cr,
             "cache_write": (run_state.tokens_cache_write or 0) + esc_cw,
         },
-        "cost_usd_estimate": outcome.get("spent", 0.0),
+        "cost_usd_estimate": total_cost,
         "child_session_id": run_state.child_session_id or "",
         "result_hash": result_hash or "",
     }
@@ -145,11 +162,11 @@ def build_audit_entry(
         esc = {
             "trigger": outcome.get("escalation_trigger", cheap_outcome.get("status", "")),
             "model": outcome.get("escalation_model", ""),
-            "status": status,
-            "cost_usd_estimate": outcome.get("spent", 0.0),
+            "status": status,  # original cheap attempt status
+            "cost_usd_estimate": esc_cost,
         }
         if cheap_outcome:
-            esc["cheap_cost_usd"] = cheap_outcome.get("spent", 0.0)
+            esc["cheap_cost_usd"] = cheap_cost
         # Include escalation run's per-call detail
         esc_detail = outcome.get("escalation_api_calls_detail")
         if esc_detail:
