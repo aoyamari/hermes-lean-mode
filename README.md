@@ -196,7 +196,7 @@ python -m pytest tests/ -q
 hermes plugins validate ~/.hermes/plugins/lean-mode --install-deps
 ```
 
-The 69 tests use a mocked Hermes context, so they pass on any machine without
+The 70 tests use a mocked Hermes context, so they pass on any machine without
 a Hermes install or your own `config.yaml`.
 
 MIT licensed. See [LICENSE](LICENSE).
