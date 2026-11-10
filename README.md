@@ -173,8 +173,9 @@ pile up, but they never got near the parent's ~225k per call.
 - No network calls of its own. All model and tool traffic goes through the
   Hermes subagent the plugin launches (`ctx.subagent_lifecycle`), on the
   models and toolsets you configure.
-- Reads only your Hermes config (the `lean:` section, plus
-  `custom_providers` to guess `parent_model` when it is unset) and the token
+- Reads only your Hermes config, as loaded by Hermes (the `lean:` section,
+  plus `model.default` or the first `custom_providers` model to fill in
+  `parent_model` when it is unset), and the token
   buckets Hermes passes to its `post_api_request` / `subagent_start` /
   `subagent_stop` hooks. No direct reads of `state.db`.
 - Writes only to `plugin-data/lean-mode/` (`runs.jsonl`, rotated at
@@ -182,9 +183,10 @@ pile up, but they never got near the parent's ~225k per call.
   statuses and session ids, never the task text or the result.
 - Reads no credentials, `.env`, `auth.json` or other credential stores.
 - No telemetry and no usage reporting.
-- It uses `toolsets.get_toolset_names` / `validate_toolset` from Hermes core
-  to validate toolset names. `hermes plugins validate` flags these as private
-  core imports.
+- No private Hermes core imports: `hermes plugins validate` passes with no
+  warnings. Toolset names are checked by Hermes itself when the worker
+  launches, which refuses unknown or broadening toolsets (fail-closed); Lean
+  shows that error to you as-is.
 
 ## Development
 
@@ -193,5 +195,8 @@ cd ~/.hermes/plugins/lean-mode
 python -m pytest tests/ -q
 hermes plugins validate ~/.hermes/plugins/lean-mode --install-deps
 ```
+
+The 69 tests use a mocked Hermes context, so they pass on any machine without
+a Hermes install or your own `config.yaml`.
 
 MIT licensed. See [LICENSE](LICENSE).
