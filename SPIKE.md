@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-09  
 **Commit tested:** `110afdd60`  
-**Plugin:** `lean-mode` (v0.2.0)
+**Plugin:** `lean-mode` (v0.1.0)
 
 ---
 

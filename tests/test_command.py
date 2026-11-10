@@ -75,3 +75,9 @@ def test_preset_with_flags():
 def test_empty():
     cmd = parse_quick("")
     assert cmd.task == ""
+
+
+def test_apostrophe_in_task_does_not_crash():
+    cmd = parse_quick("@research what's today's gold price")
+    assert cmd.preset == "research"
+    assert cmd.task == "what's today's gold price"

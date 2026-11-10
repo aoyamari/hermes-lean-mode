@@ -30,7 +30,15 @@ def parse_quick(raw_args: str) -> QuickCommand:
         cmd.task = ""
         return cmd
 
-    parts = shlex.split(raw_args)
+    # Apostrophes in free text ("today's") are not quotes: shlex would fail on
+    # one and silently drop a pair. Only honour double quotes.
+    try:
+        lex = shlex.shlex(raw_args, posix=True)
+        lex.whitespace_split = True
+        lex.quotes = '"'
+        parts = list(lex)
+    except ValueError:
+        parts = raw_args.split()
     idx = 0
 
     # Check for stats subcommand

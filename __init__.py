@@ -80,10 +80,10 @@ def register(ctx):
         name="quick",
         handler=lambda raw: _handle_quick_command(ctx, cfg, audit, raw),
         description="Cheap-model task with budget cap, auto-escalation and cost receipt",
-        args_hint="[@preset] [--budget N] [--no-escalate] [--full] <task> | stats [--days N] | config",
+        args_hint="stats [--days N] | config | <task> (shows how to ask the agent)",
     )
 
-    logger.info("Lean Mode v0.2.0 registered")
+    logger.info("Lean Mode v0.1.0 registered")
 
 
 # ── Lazy audit ─────────────────────────────────────────────────────
@@ -297,10 +297,9 @@ def _handle_quick_command(ctx, cfg: Any, audit: Any, raw_args: str) -> str:
     if not cmd.task:
         names = preset_names(cfg)
         presets_hint = "@" + ", @".join(names) if names else "(none configured)"
-        return ("Usage: /quick [@preset] [--budget N] [--no-escalate] [--full] <task>\n"
-                "       /quick stats [--days N]\n"
-                "       /quick config\n"
-                f"Flags: --model M, --tools a,b,c, --timeout S, --budget N, --no-escalate, --full\n"
+        return ("Usage: /quick stats [--days N]   totals from the audit log\n"
+                "       /quick config            effective Lean config\n"
+                "To run a task, ask the agent: \"use quick_run preset research for: <task>\"\n"
                 f"Presets: {presets_hint}")
 
     return quick_task_hint(cmd.task, cmd.preset)
@@ -314,7 +313,7 @@ def quick_task_hint(task: str, preset: Optional[str] = None) -> str:
     run anything; it tells the user the exact sentence to send the agent.
     """
     preset_name = preset or "research"
-    return f"Minta agent: 'pakai quick_run preset {preset_name} untuk: {task}'"
+    return f"Ask the agent: \"use quick_run preset {preset_name} for: {task}\""
 
 
 # ── Core execution ──────────────────────────────────────────────────
@@ -449,9 +448,9 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                 handle = ctx.subagent_lifecycle.launch(launch_req)
             except Exception as exc2:
                 _ACTIVE_RUNS.pop(correlation_id, None)
-                return (f"[Lean Error] quick_run gagal: {exc2}\n"
-                        f"Context: parent tidak punya toolsets {cfg.toolsets}.\n"
-                        f"Coba: /quick --full")
+                return (f"[Lean Error] quick_run failed: {exc2}\n"
+                        f"Context: the parent session does not have toolsets {cfg.toolsets}.\n"
+                        f"Check lean.toolsets against platform_toolsets (see README, Known limitations).")
         else:
             _ACTIVE_RUNS.pop(correlation_id, None)
             if effective_escalate and "launch_failed" in cfg.escalate_on:
@@ -460,7 +459,8 @@ def _run_direct_launch(ctx, cfg, audit, task, brief, preset,
                                        None, {"status": "launch_failed", "spent": 0.0, "error": error_msg})
                 if result:
                     return result
-            return f"[Lean Error] quick_run gagal: {error_msg}. Coba /quick --full."
+            return (f"[Lean Error] quick_run failed: {error_msg}. "
+                    f"Check lean.model and lean.toolsets, or run the task without Lean.")
 
     # ── Map child session via _PENDING ─────────────────────────────────
     # subagent_start hook fired inside launch() and stored

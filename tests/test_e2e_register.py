@@ -199,17 +199,17 @@ def test_e2e_quick_task_returns_quick_run_hint():
             handler = ctx._commands.get("quick")
             assert handler is not None
 
-            result = handler("@research tes")
-            assert result == "Minta agent: 'pakai quick_run preset research untuk: tes'", result
+            result = handler("@research test")
+            assert result == 'Ask the agent: "use quick_run preset research for: test"', result
             assert "inject" not in result.lower()
 
             # No preset given -> default hint uses research
-            result2 = handler("cari harga emas hari ini")
-            assert result2 == "Minta agent: 'pakai quick_run preset research untuk: cari harga emas hari ini'", result2
+            result2 = handler("find today's gold price")
+            assert result2 == 'Ask the agent: "use quick_run preset research for: find today\'s gold price"', result2
 
             # Other preset is kept
             result3 = handler("@code fix bug")
-            assert result3 == "Minta agent: 'pakai quick_run preset code untuk: fix bug'", result3
+            assert result3 == 'Ask the agent: "use quick_run preset code for: fix bug"', result3
 
             # Nothing was launched
             assert launch_calls == [], "/quick <task> must not launch a subagent"
